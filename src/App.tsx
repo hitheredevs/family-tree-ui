@@ -123,7 +123,7 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
 				)}
 
 				{/* Bottom Navigation */}
-				<div className='z-20'>
+				<div className='z-20 shrink-0'>
 					<BottomNav
 						activeView={activeView}
 						onViewChange={(v) => {

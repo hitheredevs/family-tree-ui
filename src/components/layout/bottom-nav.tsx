@@ -11,7 +11,10 @@ export const BottomNav: React.FC<BottomNavProps> = ({
 	activeView,
 }) => {
 	return (
-		<div className='flex h-20 w-full items-center justify-around rounded-t-3xl bg-white px-2 shadow-[0_-4px_20px_-4px_rgba(0,0,0,0.1)]'>
+		<div
+			className='flex w-full items-center justify-around rounded-t-3xl bg-white px-2 pt-2 shadow-[0_-4px_20px_-4px_rgba(0,0,0,0.1)]'
+			style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}
+		>
 			<button
 				onClick={() => onViewChange('menu')}
 				className={`flex flex-col items-center justify-center space-y-1 ${
