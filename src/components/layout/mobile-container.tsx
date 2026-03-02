@@ -4,6 +4,8 @@ export const MobileContainer = ({
 	children: React.ReactNode;
 }) => {
 	return (
-		<div className='flex h-screen w-full flex-col bg-white'>{children}</div>
+		<div className='flex w-full flex-col bg-white' style={{ height: '100dvh' }}>
+			{children}
+		</div>
 	);
 };

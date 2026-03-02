@@ -94,9 +94,25 @@ export function TreeCanvas({ onPersonOpen }: { onPersonOpen?: () => void }) {
 	const [dragStartOffset, setDragStartOffset] = useState({ x: 0, y: 0 });
 	const [wasDragged, setWasDragged] = useState(false);
 
-	/* refs so the native wheel handler always sees latest values */
+	/* refs so the native wheel / touch handlers always see latest values */
 	const stateRef = useRef({ zoom, offset });
 	stateRef.current = { zoom, offset };
+
+	/* pinch zoom ref state */
+	const pinchRef = useRef<{
+		startDist: number;
+		startZoom: number;
+		startMidX: number;
+		startMidY: number;
+		startOffset: { x: number; y: number };
+	} | null>(null);
+
+	/* touch-pan ref state (native handlers can't read React state synchronously) */
+	const touchPanRef = useRef<{
+		startX: number;
+		startY: number;
+		startOffset: { x: number; y: number };
+	} | null>(null);
 
 	/* ---- layout ---- */
 
@@ -141,7 +157,7 @@ export function TreeCanvas({ onPersonOpen }: { onPersonOpen?: () => void }) {
 			const { zoom: curZoom, offset: curOffset } = stateRef.current;
 
 			const factor = e.deltaY < 0 ? 1.1 : 0.9;
-			const newZoom = Math.min(3, Math.max(0.3, curZoom * factor));
+			const newZoom = curZoom * factor; // no limits – infinite zoom
 
 			const rect = el.getBoundingClientRect();
 			const mx = e.clientX - rect.left;
@@ -158,7 +174,93 @@ export function TreeCanvas({ onPersonOpen }: { onPersonOpen?: () => void }) {
 		return () => el.removeEventListener('wheel', handleWheel);
 	}, []);
 
-	/* ---- mouse & touch handlers for panning ---- */
+	/* ---- native touch handlers (non-passive for preventDefault) ---- */
+
+	useEffect(() => {
+		const el = containerRef.current;
+		if (!el) return;
+
+		function dist(a: Touch, b: Touch) {
+			return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+		}
+
+		const handleTouchStart = (e: TouchEvent) => {
+			if (e.touches.length === 2) {
+				e.preventDefault();
+				touchPanRef.current = null;
+				const d = dist(e.touches[0], e.touches[1]);
+				const rect = el.getBoundingClientRect();
+				const midX =
+					(e.touches[0].clientX + e.touches[1].clientX) / 2 - rect.left;
+				const midY =
+					(e.touches[0].clientY + e.touches[1].clientY) / 2 - rect.top;
+				pinchRef.current = {
+					startDist: d,
+					startZoom: stateRef.current.zoom,
+					startMidX: midX,
+					startMidY: midY,
+					startOffset: { ...stateRef.current.offset },
+				};
+			} else if (e.touches.length === 1) {
+				pinchRef.current = null;
+				touchPanRef.current = {
+					startX: e.touches[0].clientX,
+					startY: e.touches[0].clientY,
+					startOffset: { ...stateRef.current.offset },
+				};
+				setIsDragging(true);
+				setWasDragged(false);
+			}
+		};
+
+		const handleTouchMove = (e: TouchEvent) => {
+			if (e.touches.length === 2 && pinchRef.current) {
+				e.preventDefault();
+				const d = dist(e.touches[0], e.touches[1]);
+				const scale = d / pinchRef.current.startDist;
+				const newZoom = pinchRef.current.startZoom * scale; // no limits
+
+				const { startMidX, startMidY, startOffset, startZoom } =
+					pinchRef.current;
+
+				setOffset({
+					x: startMidX - ((startMidX - startOffset.x) / startZoom) * newZoom,
+					y: startMidY - ((startMidY - startOffset.y) / startZoom) * newZoom,
+				});
+				setZoom(newZoom);
+			} else if (e.touches.length === 1 && touchPanRef.current) {
+				e.preventDefault();
+				const dx = e.touches[0].clientX - touchPanRef.current.startX;
+				const dy = e.touches[0].clientY - touchPanRef.current.startY;
+				if (Math.abs(dx) > 3 || Math.abs(dy) > 3) setWasDragged(true);
+				setOffset({
+					x: touchPanRef.current.startOffset.x + dx,
+					y: touchPanRef.current.startOffset.y + dy,
+				});
+			}
+		};
+
+		const handleTouchEnd = (e: TouchEvent) => {
+			if (e.touches.length < 2) {
+				pinchRef.current = null;
+			}
+			if (e.touches.length === 0) {
+				touchPanRef.current = null;
+				setIsDragging(false);
+			}
+		};
+
+		el.addEventListener('touchstart', handleTouchStart, { passive: false });
+		el.addEventListener('touchmove', handleTouchMove, { passive: false });
+		el.addEventListener('touchend', handleTouchEnd, { passive: false });
+		return () => {
+			el.removeEventListener('touchstart', handleTouchStart);
+			el.removeEventListener('touchmove', handleTouchMove);
+			el.removeEventListener('touchend', handleTouchEnd);
+		};
+	}, []);
+
+	/* ---- mouse handlers for panning ---- */
 
 	function handlePointerDown(clientX: number, clientY: number) {
 		setIsDragging(true);
@@ -186,21 +288,6 @@ export function TreeCanvas({ onPersonOpen }: { onPersonOpen?: () => void }) {
 
 	function handleMouseMove(e: React.MouseEvent) {
 		handlePointerMove(e.clientX, e.clientY);
-	}
-
-	function handleTouchStart(e: React.TouchEvent) {
-		if (e.touches.length === 1) {
-			handlePointerDown(e.touches[0].clientX, e.touches[0].clientY);
-		}
-	}
-
-	function handleTouchMove(e: React.TouchEvent) {
-		if (e.touches.length === 1) {
-			// Prevent default scrolling behaviour only if dragging
-			// To do this properly requires a ref with passive: false event listener,
-			// but we can try just updating state here.
-			handlePointerMove(e.touches[0].clientX, e.touches[0].clientY);
-		}
 	}
 
 	function handleMouseUp() {
@@ -441,9 +528,6 @@ export function TreeCanvas({ onPersonOpen }: { onPersonOpen?: () => void }) {
 			onMouseMove={handleMouseMove}
 			onMouseUp={handleMouseUp}
 			onMouseLeave={handleMouseUp}
-			onTouchStart={handleTouchStart}
-			onTouchMove={handleTouchMove}
-			onTouchEnd={handlePointerUp}
 			onTouchCancel={handlePointerUp}
 			onClick={handleBackgroundClick}
 		>
