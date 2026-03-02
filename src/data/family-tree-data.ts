@@ -45,5 +45,6 @@ export const initialUsers: User[] = [
         username: 'azhar',
         personId: 'azhar',
         role: 'admin',
+        mustChangePassword: false,
     },
 ];
