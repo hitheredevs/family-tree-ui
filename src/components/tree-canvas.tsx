@@ -1,4 +1,5 @@
 import { useRef, useState, useEffect, useMemo } from 'react';
+import { RefreshCw, LocateFixed } from 'lucide-react';
 import { useFamilyTree } from '../state/family-tree-context';
 import { computeTreeLayout } from '../utils/tree-layout';
 import { PersonNode, NODE_W, NODE_H } from './person-node';
@@ -105,7 +106,7 @@ function loadSavedView(): {
 }
 
 export function TreeCanvas({ onPersonOpen }: { onPersonOpen?: () => void }) {
-	const { state, dispatch, centerPersonId } = useFamilyTree();
+	const { state, dispatch, centerPersonId, refreshTree } = useFamilyTree();
 	const containerRef = useRef<HTMLDivElement>(null);
 
 	/* ---- pan / zoom state (restore from localStorage if available) ---- */
@@ -562,16 +563,27 @@ export function TreeCanvas({ onPersonOpen }: { onPersonOpen?: () => void }) {
 			onTouchCancel={handlePointerUp}
 			onClick={handleBackgroundClick}
 		>
-			{/* Reset-to-me button */}
-			<button
-				onClick={(e) => {
-					e.stopPropagation();
-					resetView();
-				}}
-				className='absolute top-4 right-4 z-10 bg-white/90 backdrop-blur-sm px-3 py-1.5 rounded-full shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50 hover:text-indigo-600 transition-colors border border-gray-200'
-			>
-				↻ Reset
-			</button>
+			{/* Reset & Refresh buttons */}
+			<div className='absolute top-4 right-4 z-10 flex gap-2'>
+				<button
+					onClick={(e) => {
+						e.stopPropagation();
+						refreshTree();
+					}}
+					className='bg-white/90 backdrop-blur-sm px-3 py-1.5 rounded-full shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50 hover:text-indigo-600 transition-colors border border-gray-200 flex items-center gap-1.5'
+				>
+					<RefreshCw size={14} /> Refresh
+				</button>
+				<button
+					onClick={(e) => {
+						e.stopPropagation();
+						resetView();
+					}}
+					className='bg-white/90 backdrop-blur-sm px-3 py-1.5 rounded-full shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50 hover:text-indigo-600 transition-colors border border-gray-200 flex items-center gap-1.5'
+				>
+					<LocateFixed size={14} /> Reset
+				</button>
+			</div>
 
 			{/* Transformed world container */}
 			<div
