@@ -642,8 +642,8 @@ export function TreeCanvas({ onPersonOpen }: { onPersonOpen?: () => void }) {
 			onClick={handleBackgroundClick}
 		>
 			{/* Controls: Search, Refresh, Reset */}
-			<div className='absolute top-4 right-4 z-10 flex gap-2'>
-				<div className='relative flex items-center h-8'>
+			<div className='absolute top-4 right-4 z-10 flex gap-1.5 sm:gap-2'>
+				<div className='relative flex items-center h-8 sm:h-9'>
 					{isSearchOpen ? (
 						<div className='flex items-center bg-white/90 backdrop-blur-sm rounded-full border border-gray-200 shadow-sm px-2 h-full'>
 							<Search size={14} className='text-gray-400 ml-1 shrink-0' />
@@ -655,7 +655,7 @@ export function TreeCanvas({ onPersonOpen }: { onPersonOpen?: () => void }) {
 								placeholder='Find someone...'
 								autoFocus
 								onBlur={() => setTimeout(() => setIsSearchOpen(false), 200)}
-								className='bg-transparent border-none focus:ring-0 text-sm py-1 px-2 w-35 sm:w-48 outline-none'
+								className='bg-transparent border-none focus:ring-0 text-sm py-1 px-2 w-[110px] sm:w-48 outline-none'
 							/>
 						</div>
 					) : (
@@ -664,15 +664,16 @@ export function TreeCanvas({ onPersonOpen }: { onPersonOpen?: () => void }) {
 								e.stopPropagation();
 								setIsSearchOpen(true);
 							}}
-							className='bg-white/90 backdrop-blur-sm px-3 h-full rounded-full shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50 hover:text-indigo-600 transition-colors border border-gray-200 flex items-center gap-1.5'
+							className='bg-white/90 backdrop-blur-sm px-2.5 sm:px-3 h-full rounded-full shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50 hover:text-indigo-600 transition-colors border border-gray-200 flex items-center gap-1.5'
 						>
-							<Search size={14} /> Search
+							<Search size={14} />{' '}
+							<span className='hidden sm:inline'>Search</span>
 						</button>
 					)}
 
 					{/* Search Results */}
 					{isSearchOpen && searchResults.length > 0 && (
-						<div className='absolute top-full mt-2 right-0 w-64 bg-white rounded-xl shadow-xl border border-gray-100 overflow-hidden py-1 z-50'>
+						<div className='absolute top-full mt-2 -right-16 sm:right-0 w-[240px] sm:w-64 max-w-[calc(100vw-2rem)] bg-white rounded-xl shadow-xl border border-gray-100 overflow-hidden py-1 z-50'>
 							{searchResults.map((p) => (
 								<button
 									key={p.id}
@@ -703,18 +704,20 @@ export function TreeCanvas({ onPersonOpen }: { onPersonOpen?: () => void }) {
 						e.stopPropagation();
 						refreshTree();
 					}}
-					className='bg-white/90 backdrop-blur-sm px-3 py-1.5 rounded-full shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50 hover:text-indigo-600 transition-colors border border-gray-200 flex items-center gap-1.5'
+					className='bg-white/90 backdrop-blur-sm px-2.5 sm:px-3 py-1.5 h-8 sm:h-9 rounded-full shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50 hover:text-indigo-600 transition-colors border border-gray-200 flex items-center gap-1.5'
 				>
-					<RefreshCw size={14} /> Refresh
+					<RefreshCw size={14} />{' '}
+					<span className='hidden sm:inline'>Refresh</span>
 				</button>
 				<button
 					onClick={(e) => {
 						e.stopPropagation();
 						resetView();
 					}}
-					className='bg-white/90 backdrop-blur-sm px-3 py-1.5 rounded-full shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50 hover:text-indigo-600 transition-colors border border-gray-200 flex items-center gap-1.5'
+					className='bg-white/90 backdrop-blur-sm px-2.5 sm:px-3 py-1.5 h-8 sm:h-9 rounded-full shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50 hover:text-indigo-600 transition-colors border border-gray-200 flex items-center gap-1.5'
 				>
-					<LocateFixed size={14} /> Reset
+					<LocateFixed size={14} />{' '}
+					<span className='hidden sm:inline'>Reset</span>
 				</button>
 			</div>
 
