@@ -258,7 +258,7 @@ export function AddPersonModal() {
 									relationshipType: 'PARENT',
 								})
 								.catch(() => {}); // non-fatal if already linked
-							
+
 							await api
 								.addRelationship({
 									sourcePersonId: childId,
@@ -467,7 +467,8 @@ export function AddPersonModal() {
 									htmlFor='modal-auto-link-spouse'
 									className='cursor-pointer text-sm font-medium text-blue-800'
 								>
-									Also link to <strong>{autoSecondParent.firstName}</strong> as the other parent
+									Also link to <strong>{autoSecondParent.firstName}</strong> as
+									the other parent
 								</label>
 							</div>
 						)}
