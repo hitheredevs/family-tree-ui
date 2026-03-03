@@ -106,6 +106,8 @@ export function AddPersonModal() {
 	const [lastName, setLastName] = useState('');
 	const [gender, setGender] = useState<Gender>('male');
 	const [isDeceased, setIsDeceased] = useState(false);
+	const [adoptChildren, setAdoptChildren] = useState(true);
+	const [autoLinkSpouse, setAutoLinkSpouse] = useState(true);
 	const [saving, setSaving] = useState(false);
 	const [error, setError] = useState('');
 
@@ -123,6 +125,8 @@ export function AddPersonModal() {
 
 		setError('');
 		setIsDeceased(false);
+		setAdoptChildren(true);
+		setAutoLinkSpouse(true);
 		setSaving(false);
 		setFirstName('');
 		setRelativePersonId(addPersonModal.relativePersonId ?? '');
@@ -209,6 +213,13 @@ export function AddPersonModal() {
 						targetPersonId: created.id,
 						relationshipType: 'PARENT',
 					});
+					await api
+						.addRelationship({
+							sourcePersonId: created.id,
+							targetPersonId: parentId,
+							relationshipType: 'CHILD',
+						})
+						.catch(() => {});
 				}
 			} else {
 				const relMap: Record<string, api.RelationshipType> = {
@@ -216,14 +227,51 @@ export function AddPersonModal() {
 					parent: 'CHILD',
 					spouse: 'SPOUSE',
 				};
+				const inverseRelMap: Record<string, api.RelationshipType> = {
+					child: 'CHILD',
+					parent: 'PARENT',
+					spouse: 'SPOUSE',
+				};
+
 				await api.addRelationship({
 					sourcePersonId: targRelativeId,
 					targetPersonId: created.id,
 					relationshipType: relMap[targRelationType],
 				});
+				await api
+					.addRelationship({
+						sourcePersonId: created.id,
+						targetPersonId: targRelativeId,
+						relationshipType: inverseRelMap[targRelationType],
+					})
+					.catch(() => {});
 
-				// Silent background: auto-link spouse as second parent when adding a child
-				if (targRelationType === 'child') {
+				// When adding a spouse, optionally also link them as parent of all existing children
+				if (targRelationType === 'spouse' && adoptChildren) {
+					const rel = state.people[targRelativeId];
+					if (rel?.childrenIds?.length) {
+						for (const childId of rel.childrenIds) {
+							await api
+								.addRelationship({
+									sourcePersonId: created.id,
+									targetPersonId: childId,
+									relationshipType: 'PARENT',
+								})
+								.catch(() => {}); // non-fatal if already linked
+							
+							await api
+								.addRelationship({
+									sourcePersonId: childId,
+									targetPersonId: created.id,
+									relationshipType: 'CHILD',
+								})
+								.catch(() => {});
+						}
+					}
+				}
+
+				// Auto-link spouse as second parent when adding a child
+				if (targRelationType === 'child' && autoLinkSpouse) {
 					const rel = state.people[targRelativeId];
 					const spouseId =
 						rel?.spouseIds?.length === 1 ? rel.spouseIds[0] : null;
@@ -235,6 +283,14 @@ export function AddPersonModal() {
 								relationshipType: 'PARENT',
 							})
 							.catch(() => {}); // non-fatal if already linked
+
+						await api
+							.addRelationship({
+								sourcePersonId: created.id,
+								targetPersonId: spouseId,
+								relationshipType: 'CHILD',
+							})
+							.catch(() => {});
 					}
 				}
 			}
@@ -397,14 +453,57 @@ export function AddPersonModal() {
 							</label>
 						</div>
 
-						{/* Subtle notice when second parent will be auto-linked */}
+						{/* Notice when second parent will be auto-linked */}
 						{autoSecondParent && (
-							<p className='rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-xs text-blue-600'>
-								Will also be linked to{' '}
-								<strong>{autoSecondParent.firstName}</strong> as the other
-								parent automatically.
-							</p>
+							<div className='flex items-center gap-3 rounded-xl bg-blue-50 px-4 py-3'>
+								<input
+									id='modal-auto-link-spouse'
+									type='checkbox'
+									checked={autoLinkSpouse}
+									onChange={(e) => setAutoLinkSpouse(e.target.checked)}
+									className='h-5 w-5 cursor-pointer rounded border-blue-300 text-blue-600 focus:ring-2 focus:ring-blue-500'
+								/>
+								<label
+									htmlFor='modal-auto-link-spouse'
+									className='cursor-pointer text-sm font-medium text-blue-800'
+								>
+									Also link to <strong>{autoSecondParent.firstName}</strong> as the other parent
+								</label>
+							</div>
 						)}
+
+						{/* Toggle to adopt existing children when adding spouse */}
+						{(() => {
+							const effRelType = isContextual
+								? addPersonModal.relationType
+								: relationType;
+							const effRelId = isContextual
+								? addPersonModal.relativePersonId
+								: relativePersonId;
+							const effRel = effRelId ? state.people[effRelId] : null;
+							if (effRelType !== 'spouse' || !effRel?.childrenIds?.length)
+								return null;
+							const childNames = effRel.childrenIds
+								.map((id) => state.people[id]?.firstName)
+								.filter(Boolean);
+							return (
+								<div className='flex items-center gap-3 rounded-xl bg-gray-50 px-4 py-3'>
+									<input
+										id='modal-adopt-children'
+										type='checkbox'
+										checked={adoptChildren}
+										onChange={(e) => setAdoptChildren(e.target.checked)}
+										className='h-5 w-5 cursor-pointer rounded border-gray-300 text-lime-600 focus:ring-2 focus:ring-lime-500'
+									/>
+									<label
+										htmlFor='modal-adopt-children'
+										className='cursor-pointer text-sm font-medium text-gray-700'
+									>
+										Also add as parent of {childNames.join(', ')}
+									</label>
+								</div>
+							);
+						})()}
 
 						{error && (
 							<div className='rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-600'>

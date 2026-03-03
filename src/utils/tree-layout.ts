@@ -6,9 +6,9 @@ export interface NodePosition {
     y: number;
 }
 
-const H_GAP = 200; // minimum gap between the last person of one unit and the first of the next
-const V_GAP = 300; // vertical center-to-center
-const COUPLE_GAP = 160; // gap between spouses within a couple
+const H_GAP = 320; // minimum gap between the last person of one unit and the first of the next
+const V_GAP = 480; // vertical center-to-center
+const COUPLE_GAP = 180; // gap between spouses within a couple
 
 /**
  * Compute a flat array of node positions for the tree canvas.
@@ -67,6 +67,26 @@ export function computeTreeLayout(
             if (!people[cid] || gen.has(cid)) continue;
             gen.set(cid, g + 1);
             pcQueue.push(cid);
+        }
+    }
+
+    // Phase 1.5 — fix parent-child generation inconsistencies.
+    // BFS order can cause a child to land on the same gen as their parent
+    // (e.g. reached via their own child's parentIds before their parent's
+    // childrenIds). Iteratively push children down until consistent.
+    let changed = true;
+    while (changed) {
+        changed = false;
+        for (const [id, g] of gen) {
+            const person = people[id];
+            if (!person) continue;
+            for (const pid of person.parentIds) {
+                const pg = gen.get(pid);
+                if (pg !== undefined && pg >= g) {
+                    gen.set(id, pg + 1);
+                    changed = true;
+                }
+            }
         }
     }
 

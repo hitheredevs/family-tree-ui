@@ -359,10 +359,22 @@ export function TreeCanvas({ onPersonOpen }: { onPersonOpen?: () => void }) {
 							const leftX = Math.min(p1.x, p2.x) + NODE_W / 2;
 							const rightX = Math.max(p1.x, p2.x) - NODE_W / 2;
 							const y = (p1.y + p2.y) / 2; // same row, so avg is fine
+
+							// If they aren't adjacent, the straight line might cross other people's nodes
+							// So we arc it slightly below the node's visual box (y + 80)
+							const isAdjacent = Math.abs(p1.x - p2.x) < 300;
+							let path = '';
+							if (isAdjacent) {
+								path = `M ${leftX} ${y} L ${rightX} ${y}`;
+							} else {
+								const arcY = y + NODE_H / 2 + 10;
+								path = `M ${leftX} ${y} L ${leftX} ${arcY} L ${rightX} ${arcY} L ${rightX} ${y}`;
+							}
+
 							result.push({
 								key,
 								type: 'spouse',
-								path: `M ${leftX} ${y} L ${rightX} ${y}`,
+								path,
 							});
 						}
 					}
@@ -389,14 +401,14 @@ export function TreeCanvas({ onPersonOpen }: { onPersonOpen?: () => void }) {
 			}
 		}
 
-		// Pre-compute each family's geometry so we can stagger midY
+		// Pre-compute each family's geometry
 		interface FamilyGeo {
 			familyKey: string;
 			family: { parentIds: string[]; childIds: string[] };
+			parentPositions: { x: number; y: number }[];
 			junctionX: number;
 			parentBottomY: number;
 			closestChildTopY: number;
-			baseMidY: number;
 			childPositions: { id: string; x: number; y: number }[];
 		}
 
@@ -420,24 +432,21 @@ export function TreeCanvas({ onPersonOpen }: { onPersonOpen?: () => void }) {
 			if (childPositions.length === 0) continue;
 			childPositions.sort((a, b) => a.x - b.x);
 
-			// Use the closest child to compute midY for the horizontal bar
 			const closestChildTopY =
 				Math.min(...childPositions.map((c) => c.y)) - NODE_H / 2;
-			const baseMidY = (parentBottomY + closestChildTopY) / 2;
 
 			familyGeos.push({
 				familyKey,
 				family,
+				parentPositions,
 				junctionX,
 				parentBottomY,
 				closestChildTopY,
-				baseMidY,
 				childPositions,
 			});
 		}
 
-		// Stagger midY for families that share the same row pair
-		const STAGGER = 14;
+		// Group families by their row pair layout (so we don't overlap brackets within the same generation gap)
 		const rowPairGroups = new Map<string, FamilyGeo[]>();
 		for (const fg of familyGeos) {
 			const rpKey = `${fg.parentBottomY},${fg.closestChildTopY}`;
@@ -445,46 +454,83 @@ export function TreeCanvas({ onPersonOpen }: { onPersonOpen?: () => void }) {
 			rowPairGroups.get(rpKey)!.push(fg);
 		}
 
-		const staggerMap = new Map<string, number>();
+		// Calculate safe vertical spacing for the bottom bar of each family
+		const horizontalBarYMap = new Map<string, number>();
 		for (const group of rowPairGroups.values()) {
-			if (group.length <= 1) {
-				staggerMap.set(group[0].familyKey, 0);
-				continue;
-			}
 			group.sort((a, b) => a.junctionX - b.junctionX);
-			for (let i = 0; i < group.length; i++) {
-				const offset = (i - (group.length - 1) / 2) * STAGGER;
-				staggerMap.set(group[i].familyKey, offset);
+
+			const pbY = group[0].parentBottomY;
+			const ccTY = group[0].closestChildTopY;
+
+			// The top T-bar will be placed at pbY + 25.
+			// The spouse arc lines might go down to pbY + 10.
+			// We define the safe region for the bottom bars to avoid parent nodes entirely.
+			// The safe region starts safely below the parent node's top arrangements.
+			const safeTop = pbY + 50;
+			// We want the lowest distribution of the children bars to be right above the children
+			const safeBottom = ccTY - 40;
+
+			const maxStep = 35;
+			const totalNeeded = (group.length - 1) * maxStep;
+
+			if (totalNeeded <= safeBottom - safeTop) {
+				// We have plenty of room. Place them starting from safeBottom and staggering upwards
+				for (let i = 0; i < group.length; i++) {
+					horizontalBarYMap.set(group[i].familyKey, safeBottom - i * maxStep);
+				}
+			} else {
+				// Squeeze them within the safe region so they NEVER overlap nodes
+				const step = Math.max(
+					10,
+					(safeBottom - safeTop) / Math.max(1, group.length - 1),
+				);
+				for (let i = 0; i < group.length; i++) {
+					horizontalBarYMap.set(group[i].familyKey, safeBottom - i * step);
+				}
 			}
 		}
 
-		// Build bracket paths with staggered midY
+		// Build bracket paths with double T-bar structure
 		for (const fg of familyGeos) {
-			const midY = fg.baseMidY + (staggerMap.get(fg.familyKey) ?? 0);
+			const bottomBarY =
+				horizontalBarYMap.get(fg.familyKey) ?? fg.closestChildTopY - 40;
+			const topBarY = fg.parentBottomY + 25;
 
-			// Build bracket path
-			let path = `M ${fg.junctionX} ${fg.parentBottomY} L ${fg.junctionX} ${midY}`;
+			// === Top T-bar: stems from each parent's bottom ===
+			let path = '';
+			for (const pp of fg.parentPositions) {
+				path += `M ${pp.x} ${fg.parentBottomY} L ${pp.x} ${topBarY} `;
+			}
+			// Horizontal bar connecting parent stems (couples)
+			if (fg.parentPositions.length > 1) {
+				const pxs = fg.parentPositions.map((p) => p.x);
+				path += `M ${Math.min(...pxs)} ${topBarY} L ${Math.max(...pxs)} ${topBarY} `;
+			}
 
+			// === Vertical connector from junction to bottom bar ===
+			path += `M ${fg.junctionX} ${topBarY} L ${fg.junctionX} ${bottomBarY} `;
+
+			// === Bottom inverted T-bar: horizontal bar near children ===
 			if (fg.childPositions.length === 1) {
 				const child = fg.childPositions[0];
 				const childTop = child.y - NODE_H / 2;
 				if (child.x !== fg.junctionX) {
-					path += ` L ${child.x} ${midY}`;
+					path += `M ${fg.junctionX} ${bottomBarY} L ${child.x} ${bottomBarY} `;
 				}
-				path += ` L ${child.x} ${childTop}`;
+				path += `M ${child.x} ${bottomBarY} L ${child.x} ${childTop}`;
 			} else {
-				// Horizontal bar spanning from junction to all children
+				// Horizontal bar spanning all children
 				const leftX = Math.min(fg.junctionX, fg.childPositions[0].x);
 				const rightX = Math.max(
 					fg.junctionX,
 					fg.childPositions[fg.childPositions.length - 1].x,
 				);
-				path += ` M ${leftX} ${midY} L ${rightX} ${midY}`;
+				path += `M ${leftX} ${bottomBarY} L ${rightX} ${bottomBarY} `;
 
-				// Vertical drops to each child (each may be at different Y)
+				// Vertical drops to each child
 				for (const child of fg.childPositions) {
 					const childTop = child.y - NODE_H / 2;
-					path += ` M ${child.x} ${midY} L ${child.x} ${childTop}`;
+					path += `M ${child.x} ${bottomBarY} L ${child.x} ${childTop} `;
 				}
 			}
 
@@ -495,7 +541,7 @@ export function TreeCanvas({ onPersonOpen }: { onPersonOpen?: () => void }) {
 				junctionX: fg.junctionX,
 				childX: fg.childPositions[Math.floor(fg.childPositions.length / 2)].x,
 				parentBottomY: fg.parentBottomY,
-				midY,
+				midY: bottomBarY,
 				childTopY: fg.closestChildTopY,
 				color: DEFAULT_PC_COLOR,
 			});
