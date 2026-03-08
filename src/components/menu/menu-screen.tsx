@@ -18,7 +18,7 @@ export const MenuScreen: React.FC<MenuScreenProps> = ({ onLogout }) => {
 	const { state, dispatch, currentUser } = useFamilyTree();
 	const isAdmin = currentUser?.role === 'admin';
 	const [showChangePassword, setShowChangePassword] = useState(false);
-	const { lang, setLang, isUrdu } = useLanguage();
+	const { setLang, isUrdu } = useLanguage();
 
 	if (showChangePassword) {
 		return (

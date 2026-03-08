@@ -714,7 +714,18 @@ export function TreeCanvas({ onPersonOpen }: { onPersonOpen?: () => void }) {
 									/>
 									<div className='min-w-0'>
 										<div className='font-semibold text-gray-800 truncate'>
-											{getPersonFullName(p)}
+											{isUrdu ? (
+												<span
+													style={{
+														fontFamily: "'Noto Nastaliq Urdu', serif",
+														direction: 'rtl' as const,
+													}}
+												>
+													{toUrdu(getPersonFullName(p))}
+												</span>
+											) : (
+												getPersonFullName(p)
+											)}
 										</div>
 										{getDisambiguation(p) && (
 											<div className='truncate text-xs text-gray-500'>
