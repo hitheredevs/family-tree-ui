@@ -4,6 +4,13 @@ import { useFamilyTree } from '../state/family-tree-context';
 import { computeTreeLayout } from '../utils/tree-layout';
 import { PersonNode, NODE_W, NODE_H } from './person-node';
 import { getAvatarUrl } from '../utils/avatar';
+import {
+	buildDuplicateNameMap,
+	buildPeopleMap,
+	getPersonDisambiguation,
+	getPersonFullName,
+	getPersonSearchText,
+} from '../utils/person-labels';
 
 /* ------------------------------------------------------------------ */
 /*  Edge data types (pure data, no JSX in the memo)                    */
@@ -123,18 +130,24 @@ export function TreeCanvas({ onPersonOpen }: { onPersonOpen?: () => void }) {
 	const [isSearchOpen, setIsSearchOpen] = useState(false);
 	const [searchQuery, setSearchQuery] = useState('');
 	const searchInputRef = useRef<HTMLInputElement>(null);
+	const allPeople = useMemo(() => Object.values(state.people), [state.people]);
+	const peopleById = useMemo(() => buildPeopleMap(allPeople), [allPeople]);
+	const duplicateNames = useMemo(
+		() => buildDuplicateNameMap(allPeople),
+		[allPeople],
+	);
+	const getDisambiguation = (person: (typeof allPeople)[number]) =>
+		getPersonDisambiguation(person, peopleById, duplicateNames);
 
 	const searchResults = useMemo(() => {
 		if (!searchQuery.trim()) return [];
 		const q = searchQuery.toLowerCase();
-		return Object.values(state.people)
-			.filter(
-				(p) =>
-					p.firstName.toLowerCase().includes(q) ||
-					(p.lastName && p.lastName.toLowerCase().includes(q)),
+		return allPeople
+			.filter((p) =>
+				getPersonSearchText(p, peopleById, duplicateNames).includes(q),
 			)
 			.slice(0, 8);
-	}, [searchQuery, state.people]);
+	}, [allPeople, duplicateNames, peopleById, searchQuery]);
 
 	function jumpToPerson(personId: string) {
 		const pos = positionMap.get(personId);
@@ -688,10 +701,15 @@ export function TreeCanvas({ onPersonOpen }: { onPersonOpen?: () => void }) {
 										className='h-8 w-8 rounded-full object-cover border border-gray-100 shrink-0'
 										alt=''
 									/>
-									<div className='truncate'>
+									<div className='min-w-0'>
 										<div className='font-semibold text-gray-800 truncate'>
-											{p.firstName} {p.lastName}
+											{getPersonFullName(p)}
 										</div>
+										{getDisambiguation(p) && (
+											<div className='truncate text-xs text-gray-500'>
+												{getDisambiguation(p)}
+											</div>
+										)}
 									</div>
 								</button>
 							))}

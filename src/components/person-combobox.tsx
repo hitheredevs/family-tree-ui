@@ -1,4 +1,12 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import type { Person } from '../types/person';
+import {
+	buildDuplicateNameMap,
+	buildPeopleMap,
+	getPersonDisambiguation,
+	getPersonFullName,
+	getPersonSearchText,
+} from '../utils/person-labels';
 import { getAvatarUrl } from '../utils/avatar';
 
 export function PersonCombobox({
@@ -8,24 +16,30 @@ export function PersonCombobox({
 	placeholder = 'Search for a person...',
 	className = '',
 }: {
-	people: any[];
+	people: Person[];
 	value: string;
 	onChange: (val: string) => void;
 	placeholder?: string;
-	className?: string; // Add className prop to allow overriding styles
+	className?: string;
 }) {
 	const [query, setQuery] = useState('');
 	const [isOpen, setIsOpen] = useState(false);
+	const peopleById = useMemo(() => buildPeopleMap(people), [people]);
+	const duplicateNames = useMemo(() => buildDuplicateNameMap(people), [people]);
+	const getDisambiguation = (person: Person) =>
+		getPersonDisambiguation(person, peopleById, duplicateNames);
+	const getInputLabel = (person: Person) => {
+		const disambiguation = getDisambiguation(person);
+		return disambiguation
+			? `${getPersonFullName(person)} — ${disambiguation}`
+			: getPersonFullName(person);
+	};
 
 	const selectedPerson = people.find((p) => p.id === value);
 
 	useEffect(() => {
 		if (!isOpen) {
-			setQuery(
-				selectedPerson
-					? `${selectedPerson.firstName} ${selectedPerson.lastName || ''}`.trim()
-					: '',
-			);
+			setQuery(selectedPerson ? getInputLabel(selectedPerson) : '');
 		}
 	}, [isOpen, selectedPerson]);
 
@@ -33,9 +47,9 @@ export function PersonCombobox({
 		query === '' && !isOpen
 			? people
 			: people.filter((p) =>
-					`${p.firstName} ${p.lastName || ''}`
-						.toLowerCase()
-						.includes(query.toLowerCase()),
+					getPersonSearchText(p, peopleById, duplicateNames).includes(
+						query.toLowerCase(),
+					),
 				);
 
 	return (
@@ -81,9 +95,16 @@ export function PersonCombobox({
 									className='h-8 w-8 shrink-0 rounded-full border border-gray-100 object-cover'
 									alt=''
 								/>
-								<span className='truncate text-sm font-medium text-gray-800'>
-									{p.firstName} {p.lastName}
-								</span>
+								<div className='min-w-0'>
+									<div className='truncate text-sm font-medium text-gray-800'>
+										{getPersonFullName(p)}
+									</div>
+									{getDisambiguation(p) && (
+										<div className='truncate text-xs text-gray-500'>
+											{getDisambiguation(p)}
+										</div>
+									)}
+								</div>
 							</li>
 						))
 					)}
