@@ -200,6 +200,7 @@ function App() {
 			<ChangePasswordScreen
 				user={user}
 				forced
+				onLogout={handleLogout}
 				onComplete={async () => {
 					try {
 						const refreshed = await getMe();

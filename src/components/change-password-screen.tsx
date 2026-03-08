@@ -13,12 +13,15 @@ interface ChangePasswordScreenProps {
 	forced?: boolean;
 	user?: User;
 	onComplete: () => void;
+	/** Optional logout handler — shown as a button on forced screens so users can switch accounts. */
+	onLogout?: () => void;
 }
 
 export function ChangePasswordScreen({
 	forced = false,
 	user,
 	onComplete,
+	onLogout,
 }: ChangePasswordScreenProps) {
 	const [phoneNumber, setPhoneNumber] = useState(user?.phoneNumber ?? '');
 	const [phoneVerified, setPhoneVerified] = useState(
@@ -171,6 +174,16 @@ export function ChangePasswordScreen({
 								submitLabel='Finish Setup'
 							/>
 						</div>
+					)}
+
+					{onLogout && (
+						<button
+							type='button'
+							onClick={onLogout}
+							className='w-full text-center text-sm text-gray-400 hover:text-red-500 transition-colors pt-2'
+						>
+							Log out &amp; switch account
+						</button>
 					)}
 				</div>
 			</div>
