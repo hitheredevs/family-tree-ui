@@ -13,7 +13,7 @@ export function PhoneNumberField({
 	return (
 		<PhoneInput
 			international
-			defaultCountry='PK'
+			defaultCountry='IN'
 			countryCallingCodeEditable={false}
 			placeholder={placeholder}
 			value={value || undefined}
