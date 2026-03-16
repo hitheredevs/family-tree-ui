@@ -17,14 +17,14 @@ export function ForgotPasswordModal({ onClose }: { onClose: () => void }) {
 							Password Reset Links
 						</h2>
 						<p className='mt-2 text-sm text-gray-500'>
-							Ask an admin to generate a 10-minute reset link for your account.
+							Ask an admin to generate a 1-hour reset link for your account.
 							Open that link to set a new password.
 						</p>
 					</div>
 
 					<div className='rounded-xl border border-indigo-100 bg-indigo-50 px-4 py-3 text-sm text-indigo-700'>
-						If this is your first login, the admin can generate a setup link the
-						same way.
+						If this is your first login, the admin can generate a setup link
+						that stays valid for 1 day.
 					</div>
 				</div>
 				<button

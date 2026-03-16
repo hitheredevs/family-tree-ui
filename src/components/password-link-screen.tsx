@@ -15,12 +15,23 @@ interface PasswordLinkScreenProps {
 }
 
 function formatTimeLeft(totalSeconds: number): string {
-	const minutes = Math.floor(totalSeconds / 60)
+	const days = Math.floor(totalSeconds / 86400);
+	const hours = Math.floor((totalSeconds % 86400) / 3600);
+	const minutes = (Math.floor(totalSeconds / 60) % 60)
 		.toString()
 		.padStart(2, '0');
 	const seconds = Math.max(totalSeconds % 60, 0)
 		.toString()
 		.padStart(2, '0');
+
+	if (days > 0) {
+		return `${days}d ${hours}h ${minutes}m`;
+	}
+
+	if (hours > 0) {
+		return `${hours}h ${minutes}m ${seconds}s`;
+	}
+
 	return `${minutes}:${seconds}`;
 }
 

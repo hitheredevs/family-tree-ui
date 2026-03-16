@@ -330,7 +330,7 @@ export const ProfileScreen = () => {
 										Account Links
 									</h4>
 									<p className='mt-1 text-xs text-indigo-800/80'>
-										Generate a 10-minute setup or reset link for{' '}
+										Generate a 1-day setup link or 1-hour reset link for{' '}
 										{person.firstName}.
 									</p>
 								</div>
@@ -377,7 +377,7 @@ export const ProfileScreen = () => {
 											{generatedLink.username}
 										</span>{' '}
 										• valid until{' '}
-										{new Date(generatedLink.expiresAt).toLocaleTimeString()}
+										{new Date(generatedLink.expiresAt).toLocaleString()}
 									</div>
 									<input
 										type='text'
