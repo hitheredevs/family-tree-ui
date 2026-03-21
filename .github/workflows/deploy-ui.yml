@@ -1,0 +1,100 @@
+name: Deploy UI
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - src/**
+      - public/**
+      - package.json
+      - package-lock.json
+      - tsconfig.app.json
+      - tsconfig.json
+      - tsconfig.node.json
+      - vite.config.ts
+      - index.html
+      - scripts/deploy-ui.sh
+      - .github/workflows/deploy-ui.yml
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-family-tree-ui
+  cancel-in-progress: true
+
+jobs:
+  deploy-ui:
+    name: Deploy UI To VM
+    runs-on: family-tree-ui
+    env:
+      PROD_ENV: ${{ secrets.UI_PROD_ENV }}
+      CERTBOT_EMAIL: ${{ secrets.CERTBOT_EMAIL }}
+      UI_DOMAIN: family.hitheredevs.com
+      UI_WEB_ROOT: /var/www/family-tree-ui
+      UI_DIST_DIR: dist
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Validate required secrets
+        shell: bash
+        run: |
+          if [ -z "$PROD_ENV" ]; then
+            echo "UI_PROD_ENV secret is not configured"
+            exit 1
+          fi
+
+          if [ -z "$CERTBOT_EMAIL" ]; then
+            echo "CERTBOT_EMAIL secret is not configured"
+            exit 1
+          fi
+
+      - name: Write production env file
+        shell: bash
+        run: |
+          printf '%s' "$PROD_ENV" > .env
+          chmod 600 .env
+
+      - name: Clean previous build leftovers
+        shell: bash
+        run: |
+          rm -rf dist
+          rm -rf node_modules/.cache
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build UI
+        run: npm run build
+
+      - name: Make deploy script executable
+        run: chmod +x scripts/deploy-ui.sh
+
+      - name: Deploy UI with nginx and certbot
+        run: ./scripts/deploy-ui.sh
+
+      - name: Clean npm cache and runner temp files
+        if: always()
+        shell: bash
+        run: |
+          npm cache clean --force || true
+
+          if [ -d "$HOME/.npm/_logs" ]; then
+            rm -rf "$HOME/.npm/_logs"
+          fi
+
+          if [ -n "${RUNNER_TEMP:-}" ] && [ -d "$RUNNER_TEMP" ]; then
+            find "$RUNNER_TEMP" -mindepth 1 -maxdepth 1 -exec rm -rf {} + || true
+          fi
+
+          if [ -n "${RUNNER_TOOL_CACHE:-}" ] && [ -d "$RUNNER_TOOL_CACHE" ]; then
+            find "$RUNNER_TOOL_CACHE" -type f -name '*.tmp' -delete || true
+          fi
