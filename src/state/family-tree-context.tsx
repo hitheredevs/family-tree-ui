@@ -211,9 +211,18 @@ export function FamilyTreeProvider({ children, initialUser }: ProviderProps) {
 		if (!centerPersonId) return;
 		dispatch({ type: 'SET_LOADING', loading: true });
 		try {
+			console.info('Loading family tree', { centerPersonId });
 			const data = await api.getSubtree(centerPersonId);
+			if (!data?.people || typeof data.people !== 'object') {
+				throw new Error('Tree response did not include people data');
+			}
+			console.info('Family tree loaded', {
+				centerPersonId,
+				peopleCount: Object.keys(data.people).length,
+			});
 			dispatch({ type: 'LOAD_TREE', people: data.people });
 		} catch (err) {
+			console.error('Family tree load failed', err);
 			dispatch({
 				type: 'SET_ERROR',
 				error: err instanceof Error ? err.message : 'Failed to load tree',

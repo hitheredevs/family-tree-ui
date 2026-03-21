@@ -16,23 +16,54 @@ export function getToken(): string | null {
 }
 
 function headers(): HeadersInit {
-    const h: HeadersInit = { 'Content-Type': 'application/json' };
+    const h: HeadersInit = {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        'Cache-Control': 'no-store',
+        Pragma: 'no-cache',
+    };
     if (authToken) h['Authorization'] = `Bearer ${authToken}`;
     return h;
 }
 
 async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
-    const res = await fetch(`${API_BASE}${path}`, {
-        ...options,
-        headers: { ...headers(), ...(options.headers as Record<string, string>) },
-    });
+    const controller = new AbortController();
+    const timeoutMs = 15000;
+    const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
 
-    if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new ApiError(body.error ?? body.message ?? res.statusText, res.status);
+    try {
+        const res = await fetch(`${API_BASE}${path}`, {
+            ...options,
+            cache: 'no-store',
+            signal: controller.signal,
+            headers: { ...headers(), ...(options.headers as Record<string, string>) },
+        });
+
+        const rawBody = await res.text();
+        const body = rawBody ? JSON.parse(rawBody) : null;
+
+        if (!res.ok) {
+            throw new ApiError(
+                body?.error ?? body?.message ?? res.statusText,
+                res.status,
+            );
+        }
+
+        return body as T;
+    } catch (err) {
+        if (err instanceof Error && err.name === 'AbortError') {
+            throw new ApiError(
+                `Request timed out after ${timeoutMs / 1000} seconds for ${path}`,
+                408,
+            );
+        }
+        if (err instanceof SyntaxError) {
+            throw new ApiError(`Invalid JSON response received for ${path}`, 502);
+        }
+        throw err;
+    } finally {
+        window.clearTimeout(timeoutId);
     }
-
-    return res.json();
 }
 
 export class ApiError extends Error {
