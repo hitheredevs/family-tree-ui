@@ -254,7 +254,7 @@ export function TreeCanvas({ onPersonOpen }: { onPersonOpen?: () => void }) {
 			</div>
 
 			{/* Node overlay — floating action buttons around selected node */}
-			{overlayPos && state.selectedPersonId && state.isAdminMode && (
+			{overlayPos && state.selectedPersonId && (
 				<NodeOverlay
 					screenX={overlayPos.x}
 					screenY={overlayPos.y}

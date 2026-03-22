@@ -1,5 +1,5 @@
-// const DEFAULT_API_BASE = 'https://api.family.hitheredevs.com/api';
-const DEFAULT_API_BASE = 'http://localhost:8080/api';
+const DEFAULT_API_BASE = 'https://api.family.hitheredevs.com/api';
+// const DEFAULT_API_BASE = 'http://localhost:8080/api';
 
 function resolveApiBase(): string {
     const configuredBase = import.meta.env.VITE_API_BASE_URL?.trim();
