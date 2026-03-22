@@ -26,7 +26,6 @@ export function TreeCanvas({ onPersonOpen }: { onPersonOpen?: () => void }) {
 	const [overlayPos, setOverlayPos] = useState<{ x: number; y: number } | null>(
 		null,
 	);
-	const overlayTimerRef = useRef(0);
 
 	/* ---- stable callback refs (avoids re-creating renderer on every render) ---- */
 
@@ -48,7 +47,21 @@ export function TreeCanvas({ onPersonOpen }: { onPersonOpen?: () => void }) {
 				relationType: relation,
 			});
 		},
+		onViewChange: undefined as (() => void) | undefined,
 	});
+
+	/* ---- helper to sync overlay to current node screen position ---- */
+
+	const updateOverlayPos = useCallback(() => {
+		if (state.selectedPersonId && rendererRef.current) {
+			const pos = rendererRef.current.getNodeScreenPosition(
+				state.selectedPersonId,
+			);
+			setOverlayPos(pos);
+		} else {
+			setOverlayPos(null);
+		}
+	}, [state.selectedPersonId]);
 
 	/* Keep refs in sync with latest props/dispatch */
 	useEffect(() => {
@@ -69,6 +82,9 @@ export function TreeCanvas({ onPersonOpen }: { onPersonOpen?: () => void }) {
 				relationType: relation,
 			});
 		};
+		callbacksRef.current.onViewChange = () => {
+			updateOverlayPos();
+		};
 	});
 
 	/* ---- mount / unmount renderer ---- */
@@ -84,6 +100,7 @@ export function TreeCanvas({ onPersonOpen }: { onPersonOpen?: () => void }) {
 				onPersonOpen: (id) => callbacksRef.current.onPersonOpen(id),
 				onOpenAddPersonModal: (id, rel) =>
 					callbacksRef.current.onOpenAddPersonModal(id, rel),
+				onViewChange: () => callbacksRef.current.onViewChange?.(),
 			},
 			centerPersonId,
 		);
@@ -100,18 +117,8 @@ export function TreeCanvas({ onPersonOpen }: { onPersonOpen?: () => void }) {
 
 	useEffect(() => {
 		rendererRef.current?.setSelectedId(state.selectedPersonId);
-
-		/* Update overlay position */
-		clearTimeout(overlayTimerRef.current);
-		if (state.selectedPersonId && rendererRef.current) {
-			const pos = rendererRef.current.getNodeScreenPosition(
-				state.selectedPersonId,
-			);
-			setOverlayPos(pos);
-		} else {
-			setOverlayPos(null);
-		}
-	}, [state.selectedPersonId]);
+		updateOverlayPos();
+	}, [state.selectedPersonId, updateOverlayPos]);
 
 	/* ---- refresh handler ---- */
 
@@ -252,7 +259,9 @@ export function TreeCanvas({ onPersonOpen }: { onPersonOpen?: () => void }) {
 					screenX={overlayPos.x}
 					screenY={overlayPos.y}
 					personId={state.selectedPersonId}
-					onAddRelation={handleAddRelation}
+					onAddRelation={(id, rel) =>
+						callbacksRef.current.onOpenAddPersonModal(id, rel)
+					}
 				/>
 			)}
 		</div>

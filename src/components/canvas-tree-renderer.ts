@@ -77,6 +77,7 @@ export interface RendererCallbacks {
     onPersonSelect: (personId: string | null) => void;
     onPersonOpen: (personId: string) => void;
     onOpenAddPersonModal: (personId: string, relation: 'parent' | 'child' | 'spouse' | 'sibling') => void;
+    onViewChange?: () => void;
 }
 
 export class CanvasTreeRenderer {
@@ -99,7 +100,6 @@ export class CanvasTreeRenderer {
 
     /* Loaded-extent tracking — skip fetches when viewport is inside cached area */
     private loadedExtent: { minX: number; maxX: number; minY: number; maxY: number } | null = null;
-    private initialLoadDone = false;
 
     /* Interaction */
     private selectedId: string | null = null;
@@ -224,7 +224,6 @@ export class CanvasTreeRenderer {
         this.allNodes = [];
         this.allEdges = [];
         this.loadedExtent = null;
-        this.initialLoadDone = false;
         this.dirty = true;
         this.initialLoad();
     }
@@ -361,7 +360,6 @@ export class CanvasTreeRenderer {
             console.error('Failed to load edges', err);
         }
         await this.fetchViewport();
-        this.initialLoadDone = true;
     }
 
     private seedAttempted = false;
@@ -620,6 +618,7 @@ export class CanvasTreeRenderer {
         if (this.dirty) {
             this.draw();
             this.dirty = false;
+            this.callbacks.onViewChange?.();
         }
         this.rafId = requestAnimationFrame(this.frame);
     };
