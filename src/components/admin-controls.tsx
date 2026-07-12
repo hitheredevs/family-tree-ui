@@ -18,7 +18,7 @@ export function AdminControls() {
 					'px-4 py-2 rounded-lg text-sm font-medium shadow-md transition-all border',
 					state.isAdminMode
 						? 'bg-amber-500 text-white border-amber-600 hover:bg-amber-600'
-						: 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50',
+						: 'bg-white text-stone-600 border-stone-200 hover:bg-stone-50',
 				].join(' ')}
 			>
 				{state.isAdminMode ? '🔧 Admin Mode ON' : '🔧 Admin Mode'}

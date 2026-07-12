@@ -54,17 +54,17 @@ export function ChangePasswordScreen({
 
 	if (forced) {
 		return (
-			<div className='min-h-screen bg-linear-to-br from-lime-50 to-green-50 flex items-center justify-center p-4'>
+			<div className='min-h-screen bg-linear-to-br from-emerald-50 to-green-50 flex items-center justify-center p-4'>
 				<div className='w-full max-w-sm space-y-5'>
 					<div className='rounded-2xl bg-white p-6 shadow-xl'>
 						<div className='mb-6 text-center'>
-							<div className='mx-auto mb-4 inline-flex h-16 w-16 items-center justify-center rounded-2xl bg-lime-500 text-3xl text-white shadow-lg'>
+							<div className='mx-auto mb-4 inline-flex h-16 w-16 items-center justify-center rounded-2xl bg-emerald-500 text-3xl text-white shadow-lg'>
 								🔒
 							</div>
-							<h1 className='text-2xl font-bold text-gray-800'>
+							<h1 className='text-2xl font-bold text-stone-800'>
 								Set New Password
 							</h1>
-							<p className='mt-1 text-sm text-gray-500'>
+							<p className='mt-1 text-sm text-stone-500'>
 								Use your temporary password once, or ask an admin for a fresh
 								setup link.
 							</p>
@@ -84,7 +84,7 @@ export function ChangePasswordScreen({
 							)}
 
 							<div>
-								<label className='block text-sm font-medium text-gray-600 mb-1'>
+								<label className='block text-sm font-medium text-stone-600 mb-1'>
 									Current Password
 								</label>
 								<input
@@ -94,12 +94,12 @@ export function ChangePasswordScreen({
 									placeholder='Enter current password'
 									autoFocus
 									disabled={success}
-									className='w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-lime-500 focus:border-transparent text-sm disabled:opacity-50'
+									className='w-full px-3 py-2.5 border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent text-sm disabled:opacity-50'
 								/>
 							</div>
 
 							<div>
-								<label className='block text-sm font-medium text-gray-600 mb-1'>
+								<label className='block text-sm font-medium text-stone-600 mb-1'>
 									New Password
 								</label>
 								<input
@@ -108,12 +108,12 @@ export function ChangePasswordScreen({
 									onChange={(e) => setNewPassword(e.target.value)}
 									placeholder='At least 6 characters'
 									disabled={success}
-									className='w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-lime-500 focus:border-transparent text-sm disabled:opacity-50'
+									className='w-full px-3 py-2.5 border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent text-sm disabled:opacity-50'
 								/>
 							</div>
 
 							<div>
-								<label className='block text-sm font-medium text-gray-600 mb-1'>
+								<label className='block text-sm font-medium text-stone-600 mb-1'>
 									Confirm New Password
 								</label>
 								<input
@@ -122,7 +122,7 @@ export function ChangePasswordScreen({
 									onChange={(e) => setConfirmPassword(e.target.value)}
 									placeholder='Re-enter new password'
 									disabled={success}
-									className='w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-lime-500 focus:border-transparent text-sm disabled:opacity-50'
+									className='w-full px-3 py-2.5 border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent text-sm disabled:opacity-50'
 								/>
 								{confirmPassword && !passwordsMatch && (
 									<p className='text-xs text-red-500 mt-1'>
@@ -134,7 +134,7 @@ export function ChangePasswordScreen({
 							<button
 								type='submit'
 								disabled={!canSubmit || success}
-								className='w-full py-2.5 bg-lime-500 text-white rounded-lg text-sm font-semibold hover:bg-lime-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-md'
+								className='w-full py-2.5 bg-emerald-500 text-white rounded-lg text-sm font-semibold hover:bg-emerald-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-md'
 							>
 								{loading ? 'Changing…' : success ? 'Done ✓' : 'Set Password'}
 							</button>
@@ -145,7 +145,7 @@ export function ChangePasswordScreen({
 						<button
 							type='button'
 							onClick={onLogout}
-							className='w-full text-center text-sm text-gray-400 hover:text-red-500 transition-colors pt-2'
+							className='w-full text-center text-sm text-stone-400 hover:text-red-500 transition-colors pt-2'
 						>
 							Log out &amp; switch account
 						</button>
@@ -156,17 +156,17 @@ export function ChangePasswordScreen({
 	}
 
 	return (
-		<div className='min-h-screen bg-linear-to-br from-lime-50 to-green-50 flex items-center justify-center p-4'>
+		<div className='min-h-screen bg-linear-to-br from-emerald-50 to-green-50 flex items-center justify-center p-4'>
 			<div className='w-full max-w-sm'>
 				{/* Header */}
 				<div className='text-center mb-8'>
-					<div className='inline-flex items-center justify-center w-16 h-16 bg-lime-500 rounded-2xl shadow-lg mb-4'>
+					<div className='inline-flex items-center justify-center w-16 h-16 bg-emerald-500 rounded-2xl shadow-lg mb-4'>
 						<span className='text-3xl'>🔒</span>
 					</div>
-					<h1 className='text-2xl font-bold text-gray-800'>
+					<h1 className='text-2xl font-bold text-stone-800'>
 						{forced ? 'Set New Password' : 'Change Password'}
 					</h1>
-					<p className='text-sm text-gray-500 mt-1'>
+					<p className='text-sm text-stone-500 mt-1'>
 						{forced
 							? 'You must change your default password before continuing.'
 							: 'Enter your current password and choose a new one.'}
@@ -191,7 +191,7 @@ export function ChangePasswordScreen({
 					)}
 
 					<div>
-						<label className='block text-sm font-medium text-gray-600 mb-1'>
+						<label className='block text-sm font-medium text-stone-600 mb-1'>
 							Current Password
 						</label>
 						<input
@@ -201,12 +201,12 @@ export function ChangePasswordScreen({
 							placeholder='Enter current password'
 							autoFocus
 							disabled={success}
-							className='w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-lime-500 focus:border-transparent text-sm disabled:opacity-50'
+							className='w-full px-3 py-2.5 border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent text-sm disabled:opacity-50'
 						/>
 					</div>
 
 					<div>
-						<label className='block text-sm font-medium text-gray-600 mb-1'>
+						<label className='block text-sm font-medium text-stone-600 mb-1'>
 							New Password
 						</label>
 						<input
@@ -215,12 +215,12 @@ export function ChangePasswordScreen({
 							onChange={(e) => setNewPassword(e.target.value)}
 							placeholder='At least 6 characters'
 							disabled={success}
-							className='w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-lime-500 focus:border-transparent text-sm disabled:opacity-50'
+							className='w-full px-3 py-2.5 border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent text-sm disabled:opacity-50'
 						/>
 					</div>
 
 					<div>
-						<label className='block text-sm font-medium text-gray-600 mb-1'>
+						<label className='block text-sm font-medium text-stone-600 mb-1'>
 							Confirm New Password
 						</label>
 						<input
@@ -229,7 +229,7 @@ export function ChangePasswordScreen({
 							onChange={(e) => setConfirmPassword(e.target.value)}
 							placeholder='Re-enter new password'
 							disabled={success}
-							className='w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-lime-500 focus:border-transparent text-sm disabled:opacity-50'
+							className='w-full px-3 py-2.5 border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent text-sm disabled:opacity-50'
 						/>
 						{confirmPassword && !passwordsMatch && (
 							<p className='text-xs text-red-500 mt-1'>
@@ -246,7 +246,7 @@ export function ChangePasswordScreen({
 					<button
 						type='submit'
 						disabled={!canSubmit || success}
-						className='w-full py-2.5 bg-lime-500 text-white rounded-lg text-sm font-semibold hover:bg-lime-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-md'
+						className='w-full py-2.5 bg-emerald-500 text-white rounded-lg text-sm font-semibold hover:bg-emerald-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-md'
 					>
 						{loading ? 'Changing…' : success ? 'Done ✓' : 'Change Password'}
 					</button>
@@ -255,7 +255,7 @@ export function ChangePasswordScreen({
 						<button
 							type='button'
 							onClick={onComplete}
-							className='w-full py-2 text-sm text-gray-500 hover:text-gray-700 transition-colors'
+							className='w-full py-2 text-sm text-stone-500 hover:text-stone-700 transition-colors'
 						>
 							Cancel
 						</button>

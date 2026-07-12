@@ -9,6 +9,72 @@ body,
 	height: 100%;
 	height: 100dvh;
 	overflow: hidden;
+	background: #faf9f7;
+}
+
+/* ── Node overlay action buttons: spring-in ── */
+@keyframes overlay-pop {
+	0% {
+		opacity: 0;
+		scale: 0.5;
+	}
+	70% {
+		opacity: 1;
+		scale: 1.06;
+	}
+	100% {
+		opacity: 1;
+		scale: 1;
+	}
+}
+
+.node-overlay-btn {
+	animation: overlay-pop 0.22s ease-out both;
+}
+
+/* ── Modal entrance ── */
+@keyframes modal-in {
+	from {
+		opacity: 0;
+		transform: translateY(14px) scale(0.98);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0) scale(1);
+	}
+}
+
+.modal-card {
+	animation: modal-in 0.22s ease-out both;
+}
+
+@keyframes fade-in {
+	from {
+		opacity: 0;
+	}
+	to {
+		opacity: 1;
+	}
+}
+
+.modal-backdrop {
+	animation: fade-in 0.18s ease-out both;
+}
+
+/* ── Loading skeleton shimmer ── */
+@keyframes shimmer {
+	0% {
+		background-position: -400px 0;
+	}
+	100% {
+		background-position: 400px 0;
+	}
+}
+
+.skeleton {
+	background: linear-gradient(90deg, #f0edea 25%, #faf9f7 50%, #f0edea 75%);
+	background-size: 800px 100%;
+	animation: shimmer 1.4s infinite linear;
 }
 
 .phone-field {

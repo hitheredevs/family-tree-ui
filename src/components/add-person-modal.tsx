@@ -74,8 +74,8 @@ function GenderPicker({
 					onClick={() => onChange(v)}
 					className={`flex-1 rounded-xl border-2 py-2.5 text-sm font-semibold transition-all ${
 						value === v
-							? 'border-lime-500 bg-lime-50 text-lime-700 shadow-sm'
-							: 'border-gray-100 bg-gray-50 text-gray-500 hover:border-gray-300'
+							? 'border-emerald-500 bg-emerald-50 text-emerald-700 shadow-sm'
+							: 'border-stone-100 bg-stone-50 text-stone-500 hover:border-stone-300'
 					}`}
 				>
 					<span className='block text-xl leading-none'>{emoji}</span>
@@ -202,6 +202,8 @@ export function AddPersonModal() {
 				isDeceased,
 			});
 
+			/* The API creates both directions (forward + inverse) in one call,
+			 * so a single request per link is enough. */
 			if (targRelationType === 'sibling') {
 				const rel = state.people[targRelativeId];
 				if (!rel || rel.parentIds.length === 0)
@@ -214,23 +216,11 @@ export function AddPersonModal() {
 						targetPersonId: created.id,
 						relationshipType: 'PARENT',
 					});
-					await api
-						.addRelationship({
-							sourcePersonId: created.id,
-							targetPersonId: parentId,
-							relationshipType: 'CHILD',
-						})
-						.catch(() => {});
 				}
 			} else {
 				const relMap: Record<string, api.RelationshipType> = {
 					child: 'PARENT',
 					parent: 'CHILD',
-					spouse: 'SPOUSE',
-				};
-				const inverseRelMap: Record<string, api.RelationshipType> = {
-					child: 'CHILD',
-					parent: 'PARENT',
 					spouse: 'SPOUSE',
 				};
 
@@ -239,13 +229,6 @@ export function AddPersonModal() {
 					targetPersonId: created.id,
 					relationshipType: relMap[targRelationType],
 				});
-				await api
-					.addRelationship({
-						sourcePersonId: created.id,
-						targetPersonId: targRelativeId,
-						relationshipType: inverseRelMap[targRelationType],
-					})
-					.catch(() => {});
 
 				// When adding a spouse, optionally also link them as parent of all existing children
 				if (targRelationType === 'spouse' && adoptChildren) {
@@ -259,14 +242,6 @@ export function AddPersonModal() {
 									relationshipType: 'PARENT',
 								})
 								.catch(() => {}); // non-fatal if already linked
-
-							await api
-								.addRelationship({
-									sourcePersonId: childId,
-									targetPersonId: created.id,
-									relationshipType: 'CHILD',
-								})
-								.catch(() => {});
 						}
 					}
 				}
@@ -284,14 +259,6 @@ export function AddPersonModal() {
 								relationshipType: 'PARENT',
 							})
 							.catch(() => {}); // non-fatal if already linked
-
-						await api
-							.addRelationship({
-								sourcePersonId: created.id,
-								targetPersonId: spouseId,
-								relationshipType: 'CHILD',
-							})
-							.catch(() => {});
 					}
 				}
 			}
@@ -308,6 +275,7 @@ export function AddPersonModal() {
 			});
 
 			dispatch({ type: 'CLOSE_ADD_PERSON_MODAL' });
+			dispatch({ type: 'TREE_MUTATED' });
 			await refreshTree();
 		} catch (err) {
 			setError(err instanceof Error ? err.message : 'Failed to add person');
@@ -322,21 +290,21 @@ export function AddPersonModal() {
 
 	return (
 		<div
-			className='fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm sm:items-center sm:p-4'
+			className='modal-backdrop fixed inset-0 z-50 flex items-end justify-center bg-stone-900/50 backdrop-blur-sm sm:items-center sm:p-4'
 			onClick={() => dispatch({ type: 'CLOSE_ADD_PERSON_MODAL' })}
 		>
 			<div
-				className='w-full max-h-[90vh] overflow-y-auto rounded-t-[32px] bg-white shadow-2xl sm:max-w-sm sm:rounded-[32px]'
+				className='modal-card w-full max-h-[90vh] overflow-y-auto rounded-t-[32px] bg-white shadow-2xl shadow-stone-900/20 sm:max-w-sm sm:rounded-[32px]'
 				onClick={(e) => e.stopPropagation()}
 			>
 				{/* Drag handle */}
-				<div className='mx-auto mt-3 h-1.5 w-12 rounded-full bg-gray-200 sm:hidden' />
+				<div className='mx-auto mt-3 h-1.5 w-12 rounded-full bg-stone-200 sm:hidden' />
 
 				<div className='px-6 pb-8 pt-5'>
 					{/* Header with context chip */}
 					<div className='mb-6'>
 						{isContextual && relative && (
-							<div className='mb-2 inline-flex items-center gap-2 rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-xs font-medium text-gray-600'>
+							<div className='mb-2 inline-flex items-center gap-2 rounded-full border border-stone-200 bg-stone-50 px-3 py-1 text-xs font-medium text-stone-600'>
 								<img
 									src={getAvatarUrl(relative)}
 									className='h-4 w-4 rounded-full object-cover'
@@ -345,7 +313,7 @@ export function AddPersonModal() {
 								{relative.firstName} {relative.lastName}
 							</div>
 						)}
-						<h2 className='text-[22px] font-bold text-gray-900'>{title}</h2>
+						<h2 className='text-[22px] font-bold text-stone-900'>{title}</h2>
 					</div>
 
 					<div className='space-y-4'>
@@ -353,7 +321,7 @@ export function AddPersonModal() {
 						{!isContextual && (
 							<>
 								<div>
-									<label className='mb-1.5 block text-sm font-semibold text-gray-700'>
+									<label className='mb-1.5 block text-sm font-semibold text-stone-700'>
 										Relative To
 									</label>
 									<PersonCombobox
@@ -363,7 +331,7 @@ export function AddPersonModal() {
 									/>
 								</div>
 								<div>
-									<label className='mb-1.5 block text-sm font-semibold text-gray-700'>
+									<label className='mb-1.5 block text-sm font-semibold text-stone-700'>
 										Relationship
 									</label>
 									<select
@@ -377,7 +345,7 @@ export function AddPersonModal() {
 													| 'sibling',
 											)
 										}
-										className='w-full appearance-none rounded-xl border-transparent bg-gray-50 px-4 py-3 text-gray-800 focus:border-lime-500 focus:bg-white focus:ring-2 focus:ring-lime-200'
+										className='w-full appearance-none rounded-xl border-transparent bg-stone-50 px-4 py-3 text-stone-800 focus:border-emerald-500 focus:bg-white focus:ring-2 focus:ring-emerald-200'
 									>
 										<option value='parent'>Parent of</option>
 										<option value='child'>Child of</option>
@@ -393,7 +361,7 @@ export function AddPersonModal() {
 						{/* Name — 2-column layout */}
 						<div className='grid grid-cols-2 gap-3'>
 							<div>
-								<label className='mb-1.5 block text-sm font-semibold text-gray-700'>
+								<label className='mb-1.5 block text-sm font-semibold text-stone-700'>
 									Name
 								</label>
 								<input
@@ -405,11 +373,11 @@ export function AddPersonModal() {
 										e.key === 'Enter' && canSubmit && handleSave()
 									}
 									placeholder='Name'
-									className='w-full rounded-xl border border-transparent bg-gray-50 px-4 py-3 text-gray-800 transition-colors focus:border-lime-500 focus:bg-white focus:ring-2 focus:ring-lime-200'
+									className='w-full rounded-xl border border-transparent bg-stone-50 px-4 py-3 text-stone-800 transition-colors focus:border-emerald-500 focus:bg-white focus:ring-2 focus:ring-emerald-200'
 								/>
 							</div>
 							<div>
-								<label className='mb-1.5 block text-sm font-semibold text-gray-700'>
+								<label className='mb-1.5 block text-sm font-semibold text-stone-700'>
 									Nickname
 								</label>
 								<input
@@ -417,31 +385,31 @@ export function AddPersonModal() {
 									value={lastName}
 									onChange={(e) => setLastName(e.target.value)}
 									placeholder='Nickname'
-									className='w-full rounded-xl border border-transparent bg-gray-50 px-4 py-3 text-gray-800 transition-colors focus:border-lime-500 focus:bg-white focus:ring-2 focus:ring-lime-200'
+									className='w-full rounded-xl border border-transparent bg-stone-50 px-4 py-3 text-stone-800 transition-colors focus:border-emerald-500 focus:bg-white focus:ring-2 focus:ring-emerald-200'
 								/>
 							</div>
 						</div>
 
 						{/* Gender — visual toggle (not a select dropdown) */}
 						<div>
-							<label className='mb-1.5 block text-sm font-semibold text-gray-700'>
+							<label className='mb-1.5 block text-sm font-semibold text-stone-700'>
 								Gender
 							</label>
 							<GenderPicker value={gender} onChange={setGender} />
 						</div>
 
 						{/* Deceased checkbox */}
-						<div className='flex items-center gap-3 rounded-xl bg-gray-50 px-4 py-3'>
+						<div className='flex items-center gap-3 rounded-xl bg-stone-50 px-4 py-3'>
 							<input
 								id='modal-late'
 								type='checkbox'
 								checked={isDeceased}
 								onChange={(e) => setIsDeceased(e.target.checked)}
-								className='h-5 w-5 cursor-pointer rounded border-gray-300 text-lime-600 focus:ring-2 focus:ring-lime-500'
+								className='h-5 w-5 cursor-pointer rounded border-stone-300 text-emerald-600 focus:ring-2 focus:ring-emerald-500'
 							/>
 							<label
 								htmlFor='modal-late'
-								className='cursor-pointer text-sm font-medium text-gray-700'
+								className='cursor-pointer text-sm font-medium text-stone-700'
 							>
 								Mark as Late / Deceased
 							</label>
@@ -482,17 +450,17 @@ export function AddPersonModal() {
 								.map((id) => state.people[id]?.firstName)
 								.filter(Boolean);
 							return (
-								<div className='flex items-center gap-3 rounded-xl bg-gray-50 px-4 py-3'>
+								<div className='flex items-center gap-3 rounded-xl bg-stone-50 px-4 py-3'>
 									<input
 										id='modal-adopt-children'
 										type='checkbox'
 										checked={adoptChildren}
 										onChange={(e) => setAdoptChildren(e.target.checked)}
-										className='h-5 w-5 cursor-pointer rounded border-gray-300 text-lime-600 focus:ring-2 focus:ring-lime-500'
+										className='h-5 w-5 cursor-pointer rounded border-stone-300 text-emerald-600 focus:ring-2 focus:ring-emerald-500'
 									/>
 									<label
 										htmlFor='modal-adopt-children'
-										className='cursor-pointer text-sm font-medium text-gray-700'
+										className='cursor-pointer text-sm font-medium text-stone-700'
 									>
 										Also add as parent of {childNames.join(', ')}
 									</label>
@@ -509,14 +477,14 @@ export function AddPersonModal() {
 						<button
 							onClick={handleSave}
 							disabled={!canSubmit || saving}
-							className='mt-2 w-full rounded-xl bg-lime-500 py-3.5 text-[15px] font-semibold text-white shadow-sm shadow-lime-200 transition-colors hover:bg-lime-600 disabled:cursor-not-allowed disabled:opacity-50'
+							className='mt-2 w-full rounded-xl bg-emerald-500 py-3.5 text-[15px] font-semibold text-white shadow-sm shadow-emerald-200 transition-colors hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-50'
 						>
 							{saving ? 'Saving…' : 'Add Person'}
 						</button>
 
 						<button
 							onClick={() => dispatch({ type: 'CLOSE_ADD_PERSON_MODAL' })}
-							className='w-full rounded-xl bg-gray-100 py-3.5 text-[15px] font-semibold text-gray-700 transition-colors hover:bg-gray-200'
+							className='w-full rounded-xl bg-stone-100 py-3.5 text-[15px] font-semibold text-stone-700 transition-colors hover:bg-stone-200'
 						>
 							Cancel
 						</button>

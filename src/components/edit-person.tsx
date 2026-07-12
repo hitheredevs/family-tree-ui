@@ -127,6 +127,7 @@ export function EditPerson() {
 				relationshipType: 'PARENT',
 			});
 			setAddParentId('');
+			dispatch({ type: 'TREE_MUTATED' });
 			await refreshTree();
 		} catch (err) {
 			setError(err instanceof Error ? err.message : 'Failed to add parent');
@@ -146,6 +147,7 @@ export function EditPerson() {
 			if (rel) {
 				await api.removeRelationship(rel.id);
 			}
+			dispatch({ type: 'TREE_MUTATED' });
 			await refreshTree();
 		} catch (err) {
 			setError(err instanceof Error ? err.message : 'Failed to remove parent');
@@ -162,6 +164,7 @@ export function EditPerson() {
 				relationshipType: 'SPOUSE',
 			});
 			setAddSpouseId('');
+			dispatch({ type: 'TREE_MUTATED' });
 			await refreshTree();
 		} catch (err) {
 			setError(err instanceof Error ? err.message : 'Failed to add spouse');
@@ -181,6 +184,7 @@ export function EditPerson() {
 			if (rel) {
 				await api.removeRelationship(rel.id);
 			}
+			dispatch({ type: 'TREE_MUTATED' });
 			await refreshTree();
 		} catch (err) {
 			setError(err instanceof Error ? err.message : 'Failed to remove spouse');
@@ -196,6 +200,7 @@ export function EditPerson() {
 				targetPersonId: spouseId,
 				status: 'divorced',
 			});
+			dispatch({ type: 'TREE_MUTATED' });
 			await refreshTree();
 		} catch (err) {
 			setError(err instanceof Error ? err.message : 'Failed to update status');
@@ -211,6 +216,7 @@ export function EditPerson() {
 				targetPersonId: spouseId,
 				status: 'confirmed',
 			});
+			dispatch({ type: 'TREE_MUTATED' });
 			await refreshTree();
 		} catch (err) {
 			setError(err instanceof Error ? err.message : 'Failed to update status');
@@ -240,6 +246,7 @@ export function EditPerson() {
 				socialLinks: filteredLinks.length > 0 ? filteredLinks : null,
 			});
 			dispatch({ type: 'SET_EDITING', personId: null });
+			dispatch({ type: 'TREE_MUTATED' });
 			await refreshTree();
 		} catch (err) {
 			setError(err instanceof Error ? err.message : 'Failed to update person');
@@ -253,20 +260,20 @@ export function EditPerson() {
 	}
 
 	return (
-		<div className='flex h-full w-full flex-col bg-gray-50'>
+		<div className='flex h-full w-full flex-col bg-stone-50'>
 			{/* Fixed header */}
-			<div className='flex items-center justify-between border-b border-gray-100 bg-white px-5 py-4'>
+			<div className='flex items-center justify-between border-b border-stone-100 bg-white px-5 py-4'>
 				<button
 					onClick={handleCancel}
-					className='rounded-xl bg-gray-100 px-4 py-2 text-sm font-semibold text-gray-600 transition-colors hover:bg-gray-200'
+					className='rounded-xl bg-stone-100 px-4 py-2 text-sm font-semibold text-stone-600 transition-colors hover:bg-stone-200'
 				>
 					← Back
 				</button>
-				<h2 className='text-lg font-bold text-gray-800'>Edit Person</h2>
+				<h2 className='text-lg font-bold text-stone-800'>Edit Person</h2>
 				<button
 					onClick={handleSave}
 					disabled={saving}
-					className='rounded-xl bg-lime-500 px-4 py-2 text-sm font-semibold text-white shadow-sm shadow-lime-200 transition-colors hover:bg-lime-600 disabled:cursor-not-allowed disabled:opacity-50'
+					className='rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-white shadow-sm shadow-emerald-200 transition-colors hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-50'
 				>
 					{saving ? 'Saving…' : 'Save'}
 				</button>
@@ -284,26 +291,26 @@ export function EditPerson() {
 					{/* Names — 2-col */}
 					<div className='grid grid-cols-2 gap-3'>
 						<div>
-							<label className='mb-1.5 block text-sm font-semibold text-gray-700'>
+							<label className='mb-1.5 block text-sm font-semibold text-stone-700'>
 								Name
 							</label>
 							<input
 								type='text'
 								value={firstName}
 								onChange={(e) => setFirstName(e.target.value)}
-								className='w-full rounded-xl border border-transparent bg-white px-4 py-3 text-gray-800 shadow-sm transition-colors focus:border-lime-500 focus:ring-2 focus:ring-lime-200'
+								className='w-full rounded-xl border border-transparent bg-white px-4 py-3 text-stone-800 shadow-sm transition-colors focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200'
 								placeholder='Name'
 							/>
 						</div>
 						<div>
-							<label className='mb-1.5 block text-sm font-semibold text-gray-700'>
+							<label className='mb-1.5 block text-sm font-semibold text-stone-700'>
 								Nickname
 							</label>
 							<input
 								type='text'
 								value={lastName}
 								onChange={(e) => setLastName(e.target.value)}
-								className='w-full rounded-xl border border-transparent bg-white px-4 py-3 text-gray-800 shadow-sm transition-colors focus:border-lime-500 focus:ring-2 focus:ring-lime-200'
+								className='w-full rounded-xl border border-transparent bg-white px-4 py-3 text-stone-800 shadow-sm transition-colors focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200'
 								placeholder='Nickname'
 							/>
 						</div>
@@ -311,7 +318,7 @@ export function EditPerson() {
 
 					{/* Gender — visual toggle */}
 					<div>
-						<label className='mb-1.5 block text-sm font-semibold text-gray-700'>
+						<label className='mb-1.5 block text-sm font-semibold text-stone-700'>
 							Gender
 						</label>
 						<div className='flex gap-2'>
@@ -325,8 +332,8 @@ export function EditPerson() {
 										onClick={() => setGender(g)}
 										className={`flex-1 rounded-xl border-2 py-2.5 text-sm font-semibold transition-all ${
 											gender === g
-												? 'border-lime-500 bg-lime-50 text-lime-700 shadow-sm'
-												: 'border-gray-100 bg-white text-gray-500 hover:border-gray-300'
+												? 'border-emerald-500 bg-emerald-50 text-emerald-700 shadow-sm'
+												: 'border-stone-100 bg-white text-stone-500 hover:border-stone-300'
 										}`}
 									>
 										<span className='block text-xl leading-none'>{emoji}</span>
@@ -339,13 +346,13 @@ export function EditPerson() {
 
 					{/* Bio */}
 					<div>
-						<label className='mb-1.5 block text-sm font-semibold text-gray-700'>
+						<label className='mb-1.5 block text-sm font-semibold text-stone-700'>
 							Biography
 						</label>
 						<textarea
 							value={bio}
 							onChange={(e) => setBio(e.target.value)}
-							className='w-full rounded-xl border border-transparent bg-white px-4 py-3 text-gray-800 shadow-sm transition-colors focus:border-lime-500 focus:ring-2 focus:ring-lime-200'
+							className='w-full rounded-xl border border-transparent bg-white px-4 py-3 text-stone-800 shadow-sm transition-colors focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200'
 							rows={3}
 							placeholder='Short bio…'
 						/>
@@ -353,21 +360,21 @@ export function EditPerson() {
 
 					{/* Location */}
 					<div>
-						<label className='mb-1.5 block text-sm font-semibold text-gray-700'>
+						<label className='mb-1.5 block text-sm font-semibold text-stone-700'>
 							Location
 						</label>
 						<input
 							type='text'
 							value={location}
 							onChange={(e) => setLocation(e.target.value)}
-							className='w-full rounded-xl border border-transparent bg-white px-4 py-3 text-gray-800 shadow-sm transition-colors focus:border-lime-500 focus:ring-2 focus:ring-lime-200'
+							className='w-full rounded-xl border border-transparent bg-white px-4 py-3 text-stone-800 shadow-sm transition-colors focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200'
 							placeholder='City, Country'
 						/>
 					</div>
 
 					{/* Birthday — Month + Day only */}
 					<div>
-						<label className='mb-1.5 block text-sm font-semibold text-gray-700'>
+						<label className='mb-1.5 block text-sm font-semibold text-stone-700'>
 							Birthday (Month &amp; Day)
 						</label>
 						<MonthDayInput
@@ -384,25 +391,25 @@ export function EditPerson() {
 								id='isDeceased'
 								checked={isDeceased}
 								onChange={(e) => setIsDeceased(e.target.checked)}
-								className='h-5 w-5 cursor-pointer rounded border-gray-300 text-lime-600 focus:ring-2 focus:ring-lime-500'
+								className='h-5 w-5 cursor-pointer rounded border-stone-300 text-emerald-600 focus:ring-2 focus:ring-emerald-500'
 							/>
 							<label
 								htmlFor='isDeceased'
-								className='cursor-pointer text-sm font-semibold text-gray-700'
+								className='cursor-pointer text-sm font-semibold text-stone-700'
 							>
 								Deceased
 							</label>
 						</div>
 						{isDeceased && (
 							<div className='flex items-center gap-2'>
-								<label className='text-sm font-medium text-gray-600'>
+								<label className='text-sm font-medium text-stone-600'>
 									Death Year:
 								</label>
 								<input
 									type='number'
 									value={deathYear}
 									onChange={(e) => setDeathYear(e.target.value)}
-									className='w-24 rounded-lg border border-transparent bg-gray-50 px-3 py-1.5 text-sm focus:border-lime-500 focus:ring-2 focus:ring-lime-200'
+									className='w-24 rounded-lg border border-transparent bg-stone-50 px-3 py-1.5 text-sm focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200'
 									placeholder='YYYY'
 								/>
 							</div>
@@ -413,8 +420,8 @@ export function EditPerson() {
 					{isSelf && (
 						<div className='rounded-xl bg-white p-4 shadow-sm'>
 							<div className='mb-3 flex items-center justify-between'>
-								<h3 className='flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-gray-500'>
-									<Phone size={16} className='text-lime-500' />
+								<h3 className='flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-stone-500'>
+									<Phone size={16} className='text-emerald-500' />
 									Phone Number
 								</h3>
 								{person.phoneVerified ? (
@@ -428,7 +435,7 @@ export function EditPerson() {
 								onChange={setPhoneNumber}
 								placeholder='Enter your phone number'
 							/>
-							<p className='mt-2 text-xs text-gray-400'>
+							<p className='mt-2 text-xs text-stone-400'>
 								This number is stored on your profile for contact purposes.
 							</p>
 						</div>
@@ -436,7 +443,7 @@ export function EditPerson() {
 
 					{/* Social Links */}
 					<div className='rounded-xl bg-white p-4 shadow-sm'>
-						<h3 className='mb-3 text-sm font-bold uppercase tracking-wide text-gray-500'>
+						<h3 className='mb-3 text-sm font-bold uppercase tracking-wide text-stone-500'>
 							Social Links
 						</h3>
 						<div className='space-y-3'>
@@ -449,8 +456,8 @@ export function EditPerson() {
 								return (
 									<div key={link.type} className='space-y-2'>
 										<div className='flex items-center gap-2'>
-											<Icon size={18} className='shrink-0 text-gray-500' />
-											<span className='text-sm font-medium text-gray-700'>
+											<Icon size={18} className='shrink-0 text-stone-500' />
+											<span className='text-sm font-medium text-stone-700'>
 												{platform.label}
 											</span>
 											<button
@@ -469,7 +476,7 @@ export function EditPerson() {
 													updateSocialLink(index, 'handle', e.target.value)
 												}
 												placeholder='@username'
-												className='w-full rounded-lg border border-transparent bg-gray-50 px-3 py-2 text-sm text-gray-800 transition-colors focus:border-lime-500 focus:ring-2 focus:ring-lime-200'
+												className='w-full rounded-lg border border-transparent bg-stone-50 px-3 py-2 text-sm text-stone-800 transition-colors focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200'
 											/>
 											<input
 												type='url'
@@ -478,7 +485,7 @@ export function EditPerson() {
 													updateSocialLink(index, 'url', e.target.value)
 												}
 												placeholder={platform.placeholder}
-												className='w-full rounded-lg border border-transparent bg-gray-50 px-3 py-2 text-sm text-gray-800 transition-colors focus:border-lime-500 focus:ring-2 focus:ring-lime-200'
+												className='w-full rounded-lg border border-transparent bg-stone-50 px-3 py-2 text-sm text-stone-800 transition-colors focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200'
 											/>
 										</div>
 									</div>
@@ -486,7 +493,7 @@ export function EditPerson() {
 							})}
 
 							{socialLinks.length === 0 && (
-								<p className='text-sm text-gray-400'>
+								<p className='text-sm text-stone-400'>
 									No social links added yet.
 								</p>
 							)}
@@ -500,7 +507,7 @@ export function EditPerson() {
 												key={platform.type}
 												type='button'
 												onClick={() => addSocialLink(platform.type)}
-												className='flex items-center gap-1.5 rounded-lg border border-dashed border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-500 transition-colors hover:border-lime-400 hover:bg-lime-50 hover:text-lime-700'
+												className='flex items-center gap-1.5 rounded-lg border border-dashed border-stone-300 px-3 py-1.5 text-xs font-medium text-stone-500 transition-colors hover:border-emerald-400 hover:bg-emerald-50 hover:text-emerald-700'
 											>
 												<Plus size={12} />
 												<Icon size={14} />
@@ -515,7 +522,7 @@ export function EditPerson() {
 
 					{/* Parents */}
 					<div className='rounded-xl bg-white p-4 shadow-sm'>
-						<h3 className='mb-3 text-sm font-bold text-gray-500 uppercase tracking-wide'>
+						<h3 className='mb-3 text-sm font-bold text-stone-500 uppercase tracking-wide'>
 							Parents
 						</h3>
 						<div className='space-y-2'>
@@ -524,9 +531,9 @@ export function EditPerson() {
 								return (
 									<div
 										key={pid}
-										className='flex items-center justify-between rounded-lg bg-gray-50 px-3 py-2'
+										className='flex items-center justify-between rounded-lg bg-stone-50 px-3 py-2'
 									>
-										<span className='text-sm text-gray-700'>
+										<span className='text-sm text-stone-700'>
 											{parent ? `${parent.firstName} ${parent.lastName}` : pid}
 										</span>
 										<button
@@ -540,7 +547,7 @@ export function EditPerson() {
 								);
 							})}
 							{person.parentIds.length === 0 && (
-								<p className='text-sm text-gray-400'>No parents</p>
+								<p className='text-sm text-stone-400'>No parents</p>
 							)}
 							{person.parentIds.length < 2 && (
 								<div className='mt-1 flex gap-2'>
@@ -554,14 +561,14 @@ export function EditPerson() {
 											value={addParentId}
 											onChange={setAddParentId}
 											placeholder='Add a parent...'
-											className='w-full appearance-none rounded-xl border border-transparent bg-gray-50 px-3 py-2 text-sm text-gray-800 focus:border-lime-500 focus:ring-2 focus:ring-lime-200'
+											className='w-full appearance-none rounded-xl border border-transparent bg-stone-50 px-3 py-2 text-sm text-stone-800 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200'
 										/>
 									</div>
 									<button
 										type='button'
 										onClick={handleAddParent}
 										disabled={!addParentId}
-										className='rounded-xl bg-lime-500 px-4 py-2 text-sm font-semibold text-white shadow-sm shadow-lime-200 hover:bg-lime-600 disabled:cursor-not-allowed disabled:opacity-50'
+										className='rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-white shadow-sm shadow-emerald-200 hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-50'
 									>
 										+ Add
 									</button>
@@ -572,7 +579,7 @@ export function EditPerson() {
 
 					{/* Spouses */}
 					<div className='rounded-xl bg-white p-4 shadow-sm'>
-						<h3 className='mb-3 text-sm font-bold text-gray-500 uppercase tracking-wide'>
+						<h3 className='mb-3 text-sm font-bold text-stone-500 uppercase tracking-wide'>
 							Spouses
 						</h3>
 						<div className='space-y-2'>
@@ -581,9 +588,9 @@ export function EditPerson() {
 								return (
 									<div
 										key={sid}
-										className='flex items-center justify-between rounded-lg bg-gray-50 px-3 py-2'
+										className='flex items-center justify-between rounded-lg bg-stone-50 px-3 py-2'
 									>
-										<span className='text-sm text-gray-700'>
+										<span className='text-sm text-stone-700'>
 											{spouse ? `${spouse.firstName} ${spouse.lastName}` : sid}
 										</span>
 										<div className='flex gap-2'>
@@ -612,7 +619,7 @@ export function EditPerson() {
 										key={sid}
 										className='flex items-center justify-between rounded-lg bg-red-50 px-3 py-2 border border-red-100'
 									>
-										<span className='text-sm text-gray-500'>
+										<span className='text-sm text-stone-500'>
 											{spouse ? `${spouse.firstName} ${spouse.lastName}` : sid}
 											<span className='ml-1.5 text-xs text-red-400'>(ex)</span>
 										</span>
@@ -637,7 +644,7 @@ export function EditPerson() {
 							})}
 							{person.spouseIds.length === 0 &&
 								(!person.exSpouseIds || person.exSpouseIds.length === 0) && (
-									<p className='text-sm text-gray-400'>No spouses</p>
+									<p className='text-sm text-stone-400'>No spouses</p>
 								)}
 							<div className='mt-1 flex gap-2'>
 								<div className='flex-1'>
@@ -651,14 +658,14 @@ export function EditPerson() {
 										value={addSpouseId}
 										onChange={setAddSpouseId}
 										placeholder='Add a spouse...'
-										className='w-full appearance-none rounded-xl border border-transparent bg-gray-50 px-3 py-2 text-sm text-gray-800 focus:border-lime-500 focus:ring-2 focus:ring-lime-200'
+										className='w-full appearance-none rounded-xl border border-transparent bg-stone-50 px-3 py-2 text-sm text-stone-800 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200'
 									/>
 								</div>
 								<button
 									type='button'
 									onClick={handleAddSpouse}
 									disabled={!addSpouseId}
-									className='rounded-xl bg-lime-500 px-4 py-2 text-sm font-semibold text-white shadow-sm shadow-lime-200 hover:bg-lime-600 disabled:cursor-not-allowed disabled:opacity-50'
+									className='rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-white shadow-sm shadow-emerald-200 hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-50'
 								>
 									+ Add
 								</button>
@@ -669,10 +676,10 @@ export function EditPerson() {
 					{/* Children (read-only) */}
 					{person.childrenIds.length > 0 && (
 						<div className='rounded-xl bg-white p-4 shadow-sm'>
-							<h3 className='mb-3 text-sm font-bold text-gray-500 uppercase tracking-wide'>
+							<h3 className='mb-3 text-sm font-bold text-stone-500 uppercase tracking-wide'>
 								Children
 							</h3>
-							<p className='text-sm text-gray-600'>
+							<p className='text-sm text-stone-600'>
 								{person.childrenIds
 									.map((id) => state.people[id]?.firstName ?? id)
 									.join(', ')}

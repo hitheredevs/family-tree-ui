@@ -1,15 +1,20 @@
 /**
  * Imperative Canvas 2D renderer for the family tree.
  *
- * Manages a single <canvas> element with a requestAnimationFrame-based
- * render loop.  Fetches visible nodes from the server viewport API and
- * draws them at 3 LOD levels:
+ * Manages a single <canvas> element. Renders only when something
+ * changed (dirty flag + on-demand requestAnimationFrame — no idle
+ * render loop). Fetches visible nodes from the server viewport API
+ * and draws them at 3 LOD levels:
  *
- *   Far  (zoom < 0.2)  — coloured dots
- *   Mid  (0.2 – 0.6)   — circles + 1-line name
- *   Close (> 0.6)       — full card with avatar circle, name, indicators
+ *   Far   (zoom < 0.18) — coloured dots (screen-size clamped)
+ *   Mid   (0.18 – 0.55) — initials discs + first name
+ *   Close (> 0.55)      — cards with initials avatar, full name
  *
- * Handles pan/zoom via pointer & touch events.  Hit-tests clicks to
+ * Edge geometry (spouse lines + parent/child brackets) is computed
+ * once per data change and cached; each frame only replays the
+ * cached shapes with viewport culling.
+ *
+ * Handles pan/zoom via pointer & touch events. Hit-tests clicks to
  * detect which node was tapped.
  */
 
@@ -20,53 +25,118 @@ import {
     type ViewportNode,
     type ViewportEdge,
 } from '../services/api-client';
+import { toUrdu } from '../utils/transliterate';
 
 /* ------------------------------------------------------------------ */
 /*  Constants                                                          */
 /* ------------------------------------------------------------------ */
 
 const NODE_W = 120;
-const NODE_H = 140;
-const AVATAR_R = 36; // avatar circle radius (close LOD)
+/** Node metrics (close LOD) — floating avatar + labels, no card */
+const AVATAR_R = 34;
+/** Avatar center sits slightly above node.y; labels hang below */
+const AVATAR_CY = -16;
+/** Vertical extents used to attach connector lines */
+const NODE_TOP = 60;
+const NODE_BOTTOM = 52;
+/** Half-width used for hit-testing and spouse-line attach points */
+const HIT_HALF_W = 55;
 
 /** LOD thresholds */
-const LOD_FAR = 0.2;
-const LOD_MID = 0.6;
+const LOD_FAR = 0.18;
+const LOD_MID = 0.55;
+
+/** Zoom limits */
+const MIN_ZOOM = 0.008;
+const MAX_ZOOM = 2.5;
 
 /** Debounce delay (ms) before fetching after pan/zoom settles */
 const FETCH_DEBOUNCE = 500;
 
 const LOCAL_STORAGE_KEY = 'family-tree-canvas-view';
 
-/* Bracket palette — same as the old SVG renderer */
+/* Softened bracket palette — one hue per family */
 const BRACKET_PALETTE = [
-    '#6366f1', '#f59e0b', '#10b981', '#8b5cf6', '#ec4899',
-    '#06b6d4', '#f97316', '#14b8a6', '#a855f7', '#3b82f6',
-    '#84cc16', '#e11d48',
+    '#818cf8', '#fbbf24', '#34d399', '#a78bfa', '#f472b6',
+    '#22d3ee', '#fb923c', '#2dd4bf', '#c084fc', '#60a5fa',
+    '#a3e635', '#fb7185',
 ];
 
+/* Theme */
+const COLOR_BG = '#faf9f7';
+const COLOR_GRID_DOT = '#e2ded9';
+/* Connectors are quiet by default; the selected person's family lights up */
+const COLOR_EDGE_MUTED = '#d9d3cc';
+const COLOR_SPOUSE_MUTED = '#cfc9c2';
+const COLOR_SPOUSE_ACTIVE = '#f43f5e';
+const COLOR_SPOUSE_EX = '#fb7185';
+const COLOR_FAR_EDGE = '#dcd7d1';
+const COLOR_NAME = '#292524';
+const COLOR_NAME_SUB = '#a8a29e';
+const COLOR_HALO = 'rgba(250,249,247,0.9)';
+const COLOR_SELECTED = '#059669';
+const COLOR_CENTER = '#10b981';
+
 /* ------------------------------------------------------------------ */
-/*  Image cache (for avatars at close LOD)                            */
+/*  Small helpers                                                      */
 /* ------------------------------------------------------------------ */
 
-const imageCache = new Map<string, HTMLImageElement>();
-const imageLoading = new Set<string>();
+function roundRectPath(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    r: number,
+) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+}
 
-function getImage(src: string): HTMLImageElement | null {
-    const cached = imageCache.get(src);
-    if (cached?.complete) return cached;
-    if (imageLoading.has(src)) return null;
-    imageLoading.add(src);
-    const img = new Image();
-    img.src = src;
-    img.onload = () => {
-        imageCache.set(src, img);
-        imageLoading.delete(src);
-    };
-    img.onerror = () => {
-        imageLoading.delete(src);
-    };
-    return null;
+interface BBox {
+    minX: number;
+    minY: number;
+    maxX: number;
+    maxY: number;
+}
+
+function bboxVisible(b: BBox, vp: BBox, margin: number): boolean {
+    return (
+        b.maxX >= vp.minX - margin &&
+        b.minX <= vp.maxX + margin &&
+        b.maxY >= vp.minY - margin &&
+        b.minY <= vp.maxY + margin
+    );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Cached edge geometry                                               */
+/* ------------------------------------------------------------------ */
+
+interface SpouseLineGeom {
+    points: Array<{ x: number; y: number }>;
+    isEx: boolean;
+    markX: number;
+    markY: number;
+    aId: string;
+    bId: string;
+    bbox: BBox;
+}
+
+interface BracketGeom {
+    color: string;
+    stemX: number;
+    stemTopY: number;
+    barY: number;
+    drops: Array<{ x: number; topY: number }>;
+    /** parent + child ids — used to highlight the selected person's family */
+    memberIds: Set<string>;
+    bbox: BBox;
 }
 
 /* ------------------------------------------------------------------ */
@@ -78,6 +148,7 @@ export interface RendererCallbacks {
     onPersonOpen: (personId: string) => void;
     onOpenAddPersonModal: (personId: string, relation: 'parent' | 'child' | 'spouse' | 'sibling') => void;
     onViewChange?: () => void;
+    onStats?: (stats: { totalPeople: number; loadedNodes: number }) => void;
 }
 
 export class CanvasTreeRenderer {
@@ -90,13 +161,22 @@ export class CanvasTreeRenderer {
     private zoom = 1;
     private offset = { x: 0, y: 0 };
 
-    /* Dirty flag — only redraw when true */
-    private dirty = true;
+    /* Dirty flag + on-demand rAF (no idle loop) */
+    private dirty = false;
     private rafId = 0;
 
     /* Current data */
     private allNodes: ViewportNode[] = [];
     private allEdges: ViewportEdge[] = [];
+
+    /* Cached geometry (rebuilt when data changes) */
+    private geometryDirty = true;
+    private spouseLines: SpouseLineGeom[] = [];
+    private brackets: BracketGeom[] = [];
+
+    /* Grid pattern cache */
+    private gridPattern: CanvasPattern | null = null;
+    private gridPatternSize = 0;
 
     /* Loaded-extent tracking — skip fetches when viewport is inside cached area */
     private loadedExtent: { minX: number; maxX: number; minY: number; maxY: number } | null = null;
@@ -105,6 +185,10 @@ export class CanvasTreeRenderer {
     private selectedId: string | null = null;
     private centerId: string = '';
     private callbacks: RendererCallbacks;
+
+    /* Language */
+    private isUrdu = false;
+    private urduCache = new Map<string, string>();
 
     /* Pointer tracking */
     private dragging = false;
@@ -135,6 +219,14 @@ export class CanvasTreeRenderer {
     /* Fetch debounce */
     private fetchTimer = 0;
     private fetching = false;
+    private refetchQueued = false;
+
+    /* View persistence */
+    private hadSavedView = false;
+    private saveViewTimer = 0;
+
+    /* Stats */
+    private totalPeople = 0;
 
     /* Cleanup */
     private destroyed = false;
@@ -177,10 +269,8 @@ export class CanvasTreeRenderer {
         this.canvas.addEventListener('touchend', this.handleTouchEnd, { passive: false });
         window.addEventListener('resize', this.handleResize);
 
-        /* Start render loop */
-        this.rafId = requestAnimationFrame(this.frame);
-
-        /* Initial fetch — load all edges once, then nodes */
+        /* First paint + initial fetch */
+        this.markDirty();
         this.initialLoad();
     }
 
@@ -192,6 +282,7 @@ export class CanvasTreeRenderer {
         this.destroyed = true;
         cancelAnimationFrame(this.rafId);
         clearTimeout(this.fetchTimer);
+        clearTimeout(this.saveViewTimer);
         this.abortController?.abort();
 
         this.canvas.removeEventListener('wheel', this.handleWheel);
@@ -209,46 +300,147 @@ export class CanvasTreeRenderer {
     setSelectedId(id: string | null) {
         if (this.selectedId !== id) {
             this.selectedId = id;
-            this.dirty = true;
+            this.markDirty();
         }
     }
 
     setCenterId(id: string) {
         if (this.centerId !== id) {
             this.centerId = id;
+            this.markDirty();
         }
     }
 
-    /** Invalidate all cached data and reload from server */
+    /** Switch canvas labels between English and Urdu */
+    setUrdu(isUrdu: boolean) {
+        if (this.isUrdu === isUrdu) return;
+        this.isUrdu = isUrdu;
+        if (isUrdu && typeof document !== 'undefined' && document.fonts?.load) {
+            // Make sure the Nastaliq font is ready, then repaint.
+            document.fonts
+                .load('13px "Noto Nastaliq Urdu"')
+                .then(() => this.markDirty())
+                .catch(() => {});
+        }
+        this.markDirty();
+    }
+
+    /** Reload data from server. Keeps drawing the old data until the
+     *  fresh payload arrives, then swaps it in (no blank flash). */
     invalidate() {
-        this.allNodes = [];
-        this.allEdges = [];
         this.loadedExtent = null;
-        this.dirty = true;
         this.initialLoad();
     }
 
     /** Jump view so a specific node is centered on screen */
-    jumpToNode(nodeId: string) {
+    jumpToNode(nodeId: string, targetZoom?: number) {
         const node = this.allNodes.find((n) => n.id === nodeId);
         if (!node) return;
+        if (targetZoom !== undefined) {
+            this.zoom = this.clampZoom(targetZoom);
+        } else if (this.zoom < 0.5) {
+            this.zoom = 0.9;
+        }
         this.offset = {
             x: this.canvas.width / this.dpr / 2 - node.x * this.zoom,
             y: this.canvas.height / this.dpr / 2 - node.y * this.zoom,
         };
-        this.dirty = true;
+        this.markDirty();
         this.saveView();
         this.scheduleIfNeeded();
     }
 
+    /** Center the view on the logged-in user's node */
+    locateCenter() {
+        this.jumpToNode(this.centerId, Math.max(this.zoom, 0.9));
+    }
+
     resetView() {
+        this.jumpToNode(this.centerId, 0.9);
+        if (!this.allNodes.some((n) => n.id === this.centerId)) {
+            const w = this.canvas.width / this.dpr;
+            const h = this.canvas.height / this.dpr;
+            this.offset = { x: w / 2, y: h / 2 };
+            this.zoom = 1;
+            this.markDirty();
+            this.saveView();
+            this.scheduleIfNeeded();
+        }
+    }
+
+    /** Zoom in/out around the canvas center (for +/- buttons) */
+    zoomBy(factor: number) {
         const w = this.canvas.width / this.dpr;
         const h = this.canvas.height / this.dpr;
-        this.offset = { x: w / 2, y: h / 2 };
-        this.zoom = 1;
-        this.dirty = true;
+        this.zoomAt(w / 2, h / 2, this.clampZoom(this.zoom * factor));
+    }
+
+    /**
+     * Fit the user's connected family into view. Disconnected islands
+     * (packed far to the right by the layout) are excluded so the fit
+     * doesn't zoom out into empty space; falls back to all nodes.
+     */
+    fitToTree() {
+        if (this.allNodes.length === 0) return;
+
+        let nodes = this.allNodes;
+        const component = this.connectedComponentOf(this.centerId);
+        if (component && component.size >= 2) {
+            const filtered = this.allNodes.filter((n) => component.has(n.id));
+            if (filtered.length > 0) nodes = filtered;
+        }
+
+        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+        for (const n of nodes) {
+            if (n.x < minX) minX = n.x;
+            if (n.x > maxX) maxX = n.x;
+            if (n.y < minY) minY = n.y;
+            if (n.y > maxY) maxY = n.y;
+        }
+        const pad = 260;
+        minX -= pad; maxX += pad; minY -= pad; maxY += pad;
+
+        const w = this.canvas.width / this.dpr;
+        const h = this.canvas.height / this.dpr;
+        const zoom = this.clampZoom(Math.min(w / (maxX - minX), h / (maxY - minY)));
+        const cx = (minX + maxX) / 2;
+        const cy = (minY + maxY) / 2;
+
+        this.zoom = zoom;
+        this.offset = { x: w / 2 - cx * zoom, y: h / 2 - cy * zoom };
+        this.markDirty();
         this.saveView();
         this.scheduleIfNeeded();
+    }
+
+    /** BFS over loaded edges from a starting person */
+    private connectedComponentOf(startId: string): Set<string> | null {
+        if (!startId || this.allEdges.length === 0) return null;
+
+        const adjacency = new Map<string, string[]>();
+        const link = (a: string, b: string) => {
+            const bucket = adjacency.get(a);
+            if (bucket) bucket.push(b);
+            else adjacency.set(a, [b]);
+        };
+        for (const e of this.allEdges) {
+            link(e.sourceId, e.targetId);
+            link(e.targetId, e.sourceId);
+        }
+        if (!adjacency.has(startId)) return null;
+
+        const seen = new Set<string>([startId]);
+        const queue = [startId];
+        while (queue.length > 0) {
+            const id = queue.shift()!;
+            for (const next of adjacency.get(id) ?? []) {
+                if (!seen.has(next)) {
+                    seen.add(next);
+                    queue.push(next);
+                }
+            }
+        }
+        return seen;
     }
 
     /** Get all loaded nodes (for search functionality) */
@@ -261,12 +453,15 @@ export class CanvasTreeRenderer {
     /* ------------------------------------------------------------------ */
 
     private saveView() {
-        try {
-            localStorage.setItem(
-                LOCAL_STORAGE_KEY,
-                JSON.stringify({ offset: this.offset, zoom: this.zoom }),
-            );
-        } catch { /* quota */ }
+        clearTimeout(this.saveViewTimer);
+        this.saveViewTimer = window.setTimeout(() => {
+            try {
+                localStorage.setItem(
+                    LOCAL_STORAGE_KEY,
+                    JSON.stringify({ offset: this.offset, zoom: this.zoom }),
+                );
+            } catch { /* quota */ }
+        }, 250);
     }
 
     private restoreView() {
@@ -275,8 +470,9 @@ export class CanvasTreeRenderer {
             if (!raw) return;
             const v = JSON.parse(raw);
             if (typeof v.zoom === 'number' && v.offset?.x != null && v.offset?.y != null) {
-                this.zoom = v.zoom;
+                this.zoom = this.clampZoom(v.zoom);
                 this.offset = { x: v.offset.x, y: v.offset.y };
+                this.hadSavedView = true;
             }
         } catch { /* ignore */ }
     }
@@ -292,7 +488,7 @@ export class CanvasTreeRenderer {
         const { width, height } = parent.getBoundingClientRect();
         this.canvas.width = width * this.dpr;
         this.canvas.height = height * this.dpr;
-        this.dirty = true;
+        this.markDirty();
     }
 
     private handleResize = () => {
@@ -304,6 +500,24 @@ export class CanvasTreeRenderer {
     /*  Viewport math                                                      */
     /* ------------------------------------------------------------------ */
 
+    private clampZoom(z: number): number {
+        return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, z));
+    }
+
+    /** Zoom to `newZoom`, keeping screen point (sx, sy) fixed */
+    private zoomAt(sx: number, sy: number, newZoom: number) {
+        newZoom = this.clampZoom(newZoom);
+        if (newZoom === this.zoom) return;
+        this.offset = {
+            x: sx - ((sx - this.offset.x) / this.zoom) * newZoom,
+            y: sy - ((sy - this.offset.y) / this.zoom) * newZoom,
+        };
+        this.zoom = newZoom;
+        this.markDirty();
+        this.scheduleIfNeeded();
+        this.saveView();
+    }
+
     /** Screen CSS coordinates → world coordinates */
     private screenToWorld(sx: number, sy: number): { x: number; y: number } {
         return {
@@ -313,7 +527,7 @@ export class CanvasTreeRenderer {
     }
 
     /** Get the world-space bounding box for the current viewport */
-    private getWorldViewport() {
+    private getWorldViewport(): BBox {
         const w = this.canvas.width / this.dpr;
         const h = this.canvas.height / this.dpr;
         const tl = this.screenToWorld(0, 0);
@@ -349,28 +563,49 @@ export class CanvasTreeRenderer {
         if (this.needsFetch()) this.scheduleFetch();
     }
 
-    /** Load all edges once, then kick off initial node fetch */
+    /** Load edges and nodes in parallel on mount */
     private async initialLoad() {
-        try {
-            const edges = await getAllEdges();
-            if (this.destroyed) return;
-            this.allEdges = edges;
-            this.dirty = true;
-        } catch (err) {
+        const edgesPromise = getAllEdges().catch((err) => {
             console.error('Failed to load edges', err);
+            return [] as ViewportEdge[];
+        });
+        const viewportPromise = this.fetchViewport();
+
+        const edges = await edgesPromise;
+        if (this.destroyed) return;
+        if (edges.length > 0) {
+            this.allEdges = edges;
+            this.geometryDirty = true;
+            this.markDirty();
         }
-        await this.fetchViewport();
+        await viewportPromise;
+
+        /* First visit (no saved view): land on the user's own node */
+        if (!this.hadSavedView && this.allNodes.length > 0) {
+            this.hadSavedView = true;
+            if (this.allNodes.some((n) => n.id === this.centerId)) {
+                this.jumpToNode(this.centerId, 0.9);
+            } else {
+                this.fitToTree();
+            }
+        }
     }
 
     private seedAttempted = false;
 
     private async fetchViewport() {
-        if (this.destroyed || this.fetching) return;
+        if (this.destroyed) return;
+        if (this.fetching) {
+            this.refetchQueued = true;
+            return;
+        }
         this.fetching = true;
 
-        /* First fetch: grab everything; subsequent: viewport + margin */
+        /* Full fetch (initial or after invalidate): grab everything and
+         * REPLACE local data; subsequent fetches merge viewport + margin. */
+        const fullFetch = !this.loadedExtent;
         let minX: number, maxX: number, minY: number, maxY: number;
-        if (!this.loadedExtent) {
+        if (fullFetch) {
             minX = -1e6; maxX = 1e6; minY = -1e6; maxY = 1e6;
         } else {
             const vp = this.getWorldViewport();
@@ -406,11 +641,16 @@ export class CanvasTreeRenderer {
                 if (this.destroyed) return;
             }
 
-            /* Merge nodes — never evict old ones */
-            const nodeMap = new Map<string, ViewportNode>();
-            for (const n of this.allNodes) nodeMap.set(n.id, n);
-            for (const n of result.nodes) nodeMap.set(n.id, n);
-            this.allNodes = Array.from(nodeMap.values());
+            if (fullFetch) {
+                /* Full reload — replace so deleted people disappear */
+                this.allNodes = result.nodes;
+            } else {
+                /* Partial viewport fetch — merge into cache */
+                const nodeMap = new Map<string, ViewportNode>();
+                for (const n of this.allNodes) nodeMap.set(n.id, n);
+                for (const n of result.nodes) nodeMap.set(n.id, n);
+                this.allNodes = Array.from(nodeMap.values());
+            }
 
             /* Expand loadedExtent to be the union of old + new */
             if (this.loadedExtent) {
@@ -424,13 +664,24 @@ export class CanvasTreeRenderer {
                 this.loadedExtent = { minX, maxX, minY, maxY };
             }
 
-            this.dirty = true;
+            this.totalPeople = result.totalPeople;
+            this.callbacks.onStats?.({
+                totalPeople: this.totalPeople,
+                loadedNodes: this.allNodes.length,
+            });
+
+            this.geometryDirty = true;
+            this.markDirty();
         } catch (err) {
             if ((err as Error).name !== 'AbortError') {
                 console.error('Viewport fetch failed', err);
             }
         } finally {
             this.fetching = false;
+            if (this.refetchQueued && !this.destroyed) {
+                this.refetchQueued = false;
+                void this.fetchViewport();
+            }
         }
     }
 
@@ -441,20 +692,12 @@ export class CanvasTreeRenderer {
     private handleWheel = (e: WheelEvent) => {
         e.preventDefault();
         const factor = e.deltaY < 0 ? 1.1 : 0.9;
-        const newZoom = this.zoom * factor;
-
         const rect = this.canvas.getBoundingClientRect();
-        const mx = e.clientX - rect.left;
-        const my = e.clientY - rect.top;
-
-        this.offset = {
-            x: mx - ((mx - this.offset.x) / this.zoom) * newZoom,
-            y: my - ((my - this.offset.y) / this.zoom) * newZoom,
-        };
-        this.zoom = newZoom;
-        this.dirty = true;
-        this.scheduleIfNeeded();
-        this.saveView();
+        this.zoomAt(
+            e.clientX - rect.left,
+            e.clientY - rect.top,
+            this.zoom * factor,
+        );
     };
 
     private handleMouseDown = (e: MouseEvent) => {
@@ -475,7 +718,7 @@ export class CanvasTreeRenderer {
             x: this.dragStartOffset.x + dx,
             y: this.dragStartOffset.y + dy,
         };
-        this.dirty = true;
+        this.markDirty();
     };
 
     private handleMouseUp = (e: MouseEvent) => {
@@ -525,14 +768,15 @@ export class CanvasTreeRenderer {
             e.preventDefault();
             const d = this.touchDist(e.touches[0], e.touches[1]);
             const scale = d / this.pinch.startDist;
-            const newZoom = this.pinch.startZoom * scale;
+            const newZoom = this.clampZoom(this.pinch.startZoom * scale);
+            const effectiveScale = newZoom / this.pinch.startZoom;
 
             this.offset = {
-                x: this.pinch.startMidX - ((this.pinch.startMidX - this.pinch.startOffset.x) / this.pinch.startZoom) * newZoom,
-                y: this.pinch.startMidY - ((this.pinch.startMidY - this.pinch.startOffset.y) / this.pinch.startZoom) * newZoom,
+                x: this.pinch.startMidX - ((this.pinch.startMidX - this.pinch.startOffset.x)) * effectiveScale,
+                y: this.pinch.startMidY - ((this.pinch.startMidY - this.pinch.startOffset.y)) * effectiveScale,
             };
             this.zoom = newZoom;
-            this.dirty = true;
+            this.markDirty();
         } else if (e.touches.length === 1 && this.touchPan) {
             e.preventDefault();
             const dx = e.touches[0].clientX - this.touchPan.startX;
@@ -542,7 +786,7 @@ export class CanvasTreeRenderer {
                 x: this.touchPan.startOffset.x + dx,
                 y: this.touchPan.startOffset.y + dy,
             };
-            this.dirty = true;
+            this.markDirty();
         }
     };
 
@@ -572,7 +816,7 @@ export class CanvasTreeRenderer {
         const world = this.screenToWorld(sx, sy);
 
         /* Find closest node within hit radius */
-        const hitRadius = Math.max(30 / this.zoom, NODE_W / 2);
+        const hitRadius = Math.max(30 / this.zoom, HIT_HALF_W);
         let closest: ViewportNode | null = null;
         let closestDist = hitRadius;
 
@@ -597,7 +841,7 @@ export class CanvasTreeRenderer {
                 this.lastTapId = closest.id;
                 this.selectedId = closest.id;
                 this.callbacks.onPersonSelect(closest.id);
-                this.dirty = true;
+                this.markDirty();
             }
         } else {
             /* Tap on background → deselect */
@@ -605,35 +849,249 @@ export class CanvasTreeRenderer {
             this.lastTapId = null;
             this.selectedId = null;
             this.callbacks.onPersonSelect(null);
-            this.dirty = true;
+            this.markDirty();
         }
     }
 
     /* ------------------------------------------------------------------ */
-    /*  Render loop                                                        */
+    /*  Render scheduling — draw only when dirty                           */
     /* ------------------------------------------------------------------ */
 
+    private markDirty() {
+        this.dirty = true;
+        if (!this.rafId) {
+            this.rafId = requestAnimationFrame(this.frame);
+        }
+    }
+
     private frame = () => {
+        this.rafId = 0;
         if (this.destroyed) return;
         if (this.dirty) {
-            this.draw();
             this.dirty = false;
+            this.draw();
             this.callbacks.onViewChange?.();
         }
-        this.rafId = requestAnimationFrame(this.frame);
     };
 
+    /* ------------------------------------------------------------------ */
+    /*  Geometry cache                                                     */
+    /* ------------------------------------------------------------------ */
+
+    private rebuildGeometry() {
+        this.geometryDirty = false;
+        this.spouseLines = [];
+        this.brackets = [];
+
+        const nodeMap = new Map<string, ViewportNode>();
+        for (const n of this.allNodes) nodeMap.set(n.id, n);
+
+        /* ---- Spouse lines (deduped pairs) ---- */
+        const drawnSpouses = new Set<string>();
+        /* ---- Child → parents in a single pass ---- */
+        const childParents = new Map<string, string[]>();
+
+        for (const edge of this.allEdges) {
+            if (edge.type === 'SPOUSE') {
+                const a = nodeMap.get(edge.sourceId);
+                const b = nodeMap.get(edge.targetId);
+                if (!a || !b) continue;
+                const key = edge.sourceId < edge.targetId
+                    ? `${edge.sourceId}-${edge.targetId}`
+                    : `${edge.targetId}-${edge.sourceId}`;
+                if (drawnSpouses.has(key)) continue;
+                drawnSpouses.add(key);
+
+                const isEx = edge.status === 'divorced' || edge.status === 'EX';
+                const left = a.x < b.x ? a : b;
+                const right = a.x < b.x ? b : a;
+                const attach = AVATAR_R + 8;
+                const leftEdge = left.x + attach;
+                const rightEdge = right.x - attach;
+                const lineY = (a.y + b.y) / 2 + AVATAR_CY; // avatar level
+                const gap = right.x - left.x;
+
+                let points: Array<{ x: number; y: number }>;
+                let markX: number;
+                let markY: number;
+
+                if (gap <= 420) {
+                    points = [
+                        { x: leftEdge, y: lineY },
+                        { x: rightEdge, y: lineY },
+                    ];
+                    markX = (leftEdge + rightEdge) / 2;
+                    markY = lineY;
+                } else {
+                    /* Far apart — route above both nodes */
+                    const routeY = Math.min(a.y, b.y) - NODE_TOP - 22;
+                    points = [
+                        { x: leftEdge, y: lineY },
+                        { x: leftEdge + 18, y: lineY },
+                        { x: leftEdge + 18, y: routeY },
+                        { x: rightEdge - 18, y: routeY },
+                        { x: rightEdge - 18, y: lineY },
+                        { x: rightEdge, y: lineY },
+                    ];
+                    markX = (left.x + right.x) / 2;
+                    markY = routeY;
+                }
+
+                let minX = Infinity, minY2 = Infinity, maxX = -Infinity, maxY2 = -Infinity;
+                for (const p of points) {
+                    if (p.x < minX) minX = p.x;
+                    if (p.x > maxX) maxX = p.x;
+                    if (p.y < minY2) minY2 = p.y;
+                    if (p.y > maxY2) maxY2 = p.y;
+                }
+
+                this.spouseLines.push({
+                    points,
+                    isEx,
+                    markX,
+                    markY,
+                    aId: edge.sourceId,
+                    bId: edge.targetId,
+                    bbox: { minX, minY: minY2, maxX, maxY: maxY2 },
+                });
+            } else if (edge.type === 'PARENT') {
+                /* edge: sourceId=parent, targetId=child */
+                if (!nodeMap.has(edge.sourceId) || !nodeMap.has(edge.targetId)) continue;
+                const bucket = childParents.get(edge.targetId);
+                if (bucket) {
+                    if (!bucket.includes(edge.sourceId)) bucket.push(edge.sourceId);
+                } else {
+                    childParents.set(edge.targetId, [edge.sourceId]);
+                }
+            }
+        }
+
+        /* ---- Group children by parent-set → families ---- */
+        const familyMap = new Map<string, { parentIds: string[]; childIds: string[] }>();
+        for (const [childId, parentIds] of childParents) {
+            const sorted = [...parentIds].sort();
+            const key = sorted.join(',');
+            let fam = familyMap.get(key);
+            if (!fam) {
+                fam = { parentIds: sorted, childIds: [] };
+                familyMap.set(key, fam);
+            }
+            fam.childIds.push(childId);
+        }
+
+        /* ---- Pre-compute bracket geometry ---- */
+        interface RawBracket {
+            familyKey: string;
+            junctionX: number;
+            parentBottomY: number;
+            childTopY: number;
+            children: ViewportNode[];
+            color: string;
+        }
+        const rawBrackets: RawBracket[] = [];
+
+        for (const [familyKey, family] of familyMap) {
+            const parentPositions = family.parentIds
+                .map((id) => nodeMap.get(id))
+                .filter((n): n is ViewportNode => !!n);
+            if (parentPositions.length === 0) continue;
+
+            const children = family.childIds
+                .map((id) => nodeMap.get(id))
+                .filter((n): n is ViewportNode => !!n)
+                .sort((a, b) => a.x - b.x);
+            if (children.length === 0) continue;
+
+            const junctionX =
+                parentPositions.reduce((s, p) => s + p.x, 0) / parentPositions.length;
+            const parentBottomY = Math.max(...parentPositions.map((p) => p.y)) + NODE_BOTTOM;
+            const childTopY = Math.min(...children.map((c) => c.y)) - NODE_TOP;
+
+            /* Stable color: hash the family key */
+            let h = 0;
+            for (let i = 0; i < familyKey.length; i++) h = ((h << 5) - h + familyKey.charCodeAt(i)) | 0;
+            const color = BRACKET_PALETTE[((h % BRACKET_PALETTE.length) + BRACKET_PALETTE.length) % BRACKET_PALETTE.length];
+
+            rawBrackets.push({ familyKey, junctionX, parentBottomY, childTopY, children, color });
+        }
+
+        /* ---- Stagger: distinct horizontal-bar Y per family within a band ---- */
+        const STAGGER_STEP = 22;
+        const bandKey = (b: RawBracket) =>
+            `${Math.round(b.parentBottomY)}:${Math.round(b.childTopY)}`;
+        const bandGroups = new Map<string, RawBracket[]>();
+        for (const b of rawBrackets) {
+            const k = bandKey(b);
+            const group = bandGroups.get(k);
+            if (group) group.push(b);
+            else bandGroups.set(k, [b]);
+        }
+
+        const barYMap = new Map<string, number>();
+        for (const group of bandGroups.values()) {
+            if (group.length === 0) continue;
+            group.sort((a, b) => a.junctionX - b.junctionX);
+            const gapTop = group[0].parentBottomY;
+            const gapBot = group[0].childTopY;
+            const gapH = gapBot - gapTop;
+            const margin = gapH * 0.22;
+            const usable = gapH - 2 * margin;
+            const step = group.length > 1
+                ? Math.min(STAGGER_STEP, usable / (group.length - 1))
+                : 0;
+            const totalSpan = step * (group.length - 1);
+            const startY = gapTop + margin + (usable - totalSpan) / 2;
+            for (let i = 0; i < group.length; i++) {
+                barYMap.set(group[i].familyKey, startY + i * step);
+            }
+        }
+
+        for (const b of rawBrackets) {
+            const barY = barYMap.get(b.familyKey) ?? (b.parentBottomY + b.childTopY) / 2;
+            const drops = b.children.map((c) => ({ x: c.x, topY: c.y - NODE_TOP }));
+
+            let minX = b.junctionX, maxX = b.junctionX;
+            for (const d of drops) {
+                if (d.x < minX) minX = d.x;
+                if (d.x > maxX) maxX = d.x;
+            }
+
+            const memberIds = new Set<string>(b.familyKey.split(','));
+            for (const c of b.children) memberIds.add(c.id);
+
+            this.brackets.push({
+                color: b.color,
+                stemX: b.junctionX,
+                stemTopY: b.parentBottomY,
+                barY,
+                drops,
+                memberIds,
+                bbox: {
+                    minX,
+                    maxX,
+                    minY: b.parentBottomY,
+                    maxY: Math.max(...drops.map((d) => d.topY), barY),
+                },
+            });
+        }
+    }
+
+    /* ------------------------------------------------------------------ */
+    /*  Drawing                                                            */
+    /* ------------------------------------------------------------------ */
+
     private draw() {
+        if (this.geometryDirty) this.rebuildGeometry();
+
         const ctx = this.ctx;
         const dpr = this.dpr;
-        const cw = this.canvas.width;
-        const ch = this.canvas.height;
+        const w = this.canvas.width / dpr;
+        const h = this.canvas.height / dpr;
 
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-        ctx.clearRect(0, 0, cw / dpr, ch / dpr);
 
-        /* Background dots */
-        this.drawBackground(ctx, cw / dpr, ch / dpr);
+        /* Background + dot grid */
+        this.drawBackground(ctx, w, h);
 
         /* Apply world transform */
         ctx.save();
@@ -656,10 +1114,9 @@ export class CanvasTreeRenderer {
                 n.y >= vp.minY - margin &&
                 n.y <= vp.maxY + margin,
         );
-        const visibleIds = new Set(visibleNodes.map((n) => n.id));
 
-        /* Draw edges */
-        this.drawEdges(ctx, lod, visibleIds);
+        /* Draw edges (cached geometry, culled) */
+        this.drawEdges(ctx, lod, vp, margin);
 
         /* Draw nodes */
         for (const node of visibleNodes) {
@@ -669,380 +1126,369 @@ export class CanvasTreeRenderer {
         ctx.restore();
     }
 
-    /* ---- Background dots ---- */
+    /* ---- Background dots (pattern tile — one fill instead of N arcs) ---- */
 
     private drawBackground(ctx: CanvasRenderingContext2D, w: number, h: number) {
-        const gridSize = 20 * this.zoom;
-        if (gridSize < 4) return; // dots too tiny
+        ctx.fillStyle = COLOR_BG;
+        ctx.fillRect(0, 0, w, h);
 
-        const startX = this.offset.x % gridSize;
-        const startY = this.offset.y % gridSize;
+        const gridSize = 22 * this.zoom;
+        if (gridSize < 5) return; // dots too tiny to matter
 
-        ctx.fillStyle = '#e2e8f0';
-        for (let x = startX; x < w; x += gridSize) {
-            for (let y = startY; y < h; y += gridSize) {
-                ctx.beginPath();
-                ctx.arc(x, y, 1, 0, Math.PI * 2);
-                ctx.fill();
-            }
+        if (!this.gridPattern || Math.abs(gridSize - this.gridPatternSize) > 0.25) {
+            const tile = document.createElement('canvas');
+            const ts = Math.max(2, Math.round(gridSize * this.dpr));
+            tile.width = ts;
+            tile.height = ts;
+            const tctx = tile.getContext('2d')!;
+            tctx.fillStyle = COLOR_GRID_DOT;
+            tctx.beginPath();
+            tctx.arc(ts / 2, ts / 2, Math.max(1, this.dpr), 0, Math.PI * 2);
+            tctx.fill();
+            this.gridPattern = ctx.createPattern(tile, 'repeat');
+            this.gridPatternSize = gridSize;
         }
+
+        if (!this.gridPattern) return;
+
+        const actual = this.gridPatternSize;
+        const phaseX = this.offset.x % actual;
+        const phaseY = this.offset.y % actual;
+
+        ctx.save();
+        ctx.translate(phaseX, phaseY);
+        /* Pattern tile is dpr-scaled: draw it back at CSS pixel size */
+        ctx.scale(1 / this.dpr, 1 / this.dpr);
+        ctx.fillStyle = this.gridPattern;
+        ctx.fillRect(
+            -actual * this.dpr * 2,
+            -actual * this.dpr * 2,
+            (w + actual * 4) * this.dpr,
+            (h + actual * 4) * this.dpr,
+        );
+        ctx.restore();
     }
 
-    /* ---- Edge drawing ---- */
+    /* ---- Edge drawing (replays cached geometry) ---- */
 
     private drawEdges(
         ctx: CanvasRenderingContext2D,
         lod: 'far' | 'mid' | 'close',
-        _visibleIds: Set<string>,
+        vp: BBox,
+        margin: number,
     ) {
-        /* Build node lookup for positions */
-        const nodeMap = new Map<string, ViewportNode>();
-        for (const n of this.allNodes) nodeMap.set(n.id, n);
+        const selected = this.selectedId;
 
-        /* Group edges by type — draw every edge whose BOTH endpoints are loaded.
-         * Canvas clipping handles off-screen edges; this prevents edges from
-         * appearing / disappearing as the viewport moves. */
-        const spouseEdges: ViewportEdge[] = [];
-        const parentEdges: ViewportEdge[] = [];
+        /* ---- Parent-child brackets (muted; selected family colored) ---- */
+        const highlighted: BracketGeom[] = [];
 
-        for (const edge of this.allEdges) {
-            if (!nodeMap.has(edge.sourceId) || !nodeMap.has(edge.targetId)) continue;
-            if (edge.type === 'SPOUSE') {
-                spouseEdges.push(edge);
-            } else if (edge.type === 'PARENT') {
-                parentEdges.push(edge);
+        for (const b of this.brackets) {
+            if (!bboxVisible(b.bbox, vp, margin)) continue;
+            if (selected && b.memberIds.has(selected)) {
+                highlighted.push(b);
+                continue; // draw on top later
             }
+
+            ctx.strokeStyle = lod === 'far' ? COLOR_FAR_EDGE : COLOR_EDGE_MUTED;
+            ctx.lineWidth = lod === 'far' ? 1.2 / this.zoom : 1.25;
+            this.strokeBracket(ctx, b);
         }
 
-        /* ---- Spouse edges ---- */
-        const drawnSpouses = new Set<string>();
-        for (const edge of spouseEdges) {
-            const key = [edge.sourceId, edge.targetId].sort().join('-');
-            if (drawnSpouses.has(key)) continue;
-            drawnSpouses.add(key);
+        for (const b of highlighted) {
+            ctx.strokeStyle = b.color;
+            ctx.lineWidth = lod === 'far' ? 2 / this.zoom : 2.25;
+            this.strokeBracket(ctx, b);
+        }
 
-            const a = nodeMap.get(edge.sourceId);
-            const b = nodeMap.get(edge.targetId);
-            if (!a || !b) continue;
+        /* ---- Spouse lines ---- */
+        for (const line of this.spouseLines) {
+            if (!bboxVisible(line.bbox, vp, margin)) continue;
 
-            const isEx = edge.status === 'EX';
+            const isActive =
+                selected !== null &&
+                (line.aId === selected || line.bId === selected);
 
             if (lod === 'far') {
-                ctx.strokeStyle = '#94a3b8';
-                ctx.lineWidth = 1 / this.zoom;
+                ctx.strokeStyle = COLOR_FAR_EDGE;
+                ctx.lineWidth = 1.2 / this.zoom;
                 ctx.setLineDash([]);
+            } else if (line.isEx) {
+                ctx.strokeStyle = isActive ? COLOR_SPOUSE_EX : '#f3c6cd';
+                ctx.lineWidth = isActive ? 2 : 1.5;
+                ctx.setLineDash([5, 5]);
             } else {
-                ctx.strokeStyle = isEx ? '#f87171' : '#a5b4fc';
-                ctx.lineWidth = isEx ? 1.5 : 2;
-                ctx.setLineDash(isEx ? [4, 4] : [6, 3]);
+                ctx.strokeStyle = isActive ? COLOR_SPOUSE_ACTIVE : COLOR_SPOUSE_MUTED;
+                ctx.lineWidth = isActive ? 2.25 : 1.5;
+                ctx.setLineDash([]);
             }
 
-            /* Simple horizontal dashed line between the pair.
-             * For far-apart spouses, route ABOVE the nodes to stay clear. */
-            const left = a.x < b.x ? a : b;
-            const right = a.x < b.x ? b : a;
-            const leftEdge = left.x + NODE_W / 2;
-            const rightEdge = right.x - NODE_W / 2;
-            const midY = (a.y + b.y) / 2;
-            const gap = right.x - left.x;
-
+            ctx.lineJoin = 'round';
             ctx.beginPath();
-            if (gap <= 400) {
-                /* Adjacent — simple horizontal line */
-                ctx.moveTo(leftEdge, midY);
-                ctx.lineTo(rightEdge, midY);
-            } else {
-                /* Far apart — route above both nodes */
-                const routeY = Math.min(a.y, b.y) - NODE_H / 2 - 30;
-                ctx.moveTo(leftEdge, midY);
-                ctx.lineTo(leftEdge, routeY);
-                ctx.lineTo(rightEdge, routeY);
-                ctx.lineTo(rightEdge, midY);
+            ctx.moveTo(line.points[0].x, line.points[0].y);
+            for (let i = 1; i < line.points.length; i++) {
+                ctx.lineTo(line.points[i].x, line.points[i].y);
             }
             ctx.stroke();
 
-            /* Ex-spouse cross mark */
-            if (isEx && lod !== 'far') {
-                const mx = (a.x + b.x) / 2;
-                const my = gap <= 400 ? midY : Math.min(a.y, b.y) - NODE_H / 2 - 30;
-                ctx.fillStyle = '#ef4444';
-                ctx.font = 'bold 14px sans-serif';
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'middle';
-                ctx.fillText('✕', mx, my);
+            if (lod !== 'far') {
+                if (line.isEx) {
+                    /* Divorced — chip with ✕ */
+                    ctx.setLineDash([]);
+                    ctx.beginPath();
+                    ctx.arc(line.markX, line.markY, 8, 0, Math.PI * 2);
+                    ctx.fillStyle = COLOR_BG;
+                    ctx.fill();
+                    ctx.strokeStyle = isActive ? COLOR_SPOUSE_EX : '#f3c6cd';
+                    ctx.lineWidth = 1.5;
+                    ctx.stroke();
+                    ctx.fillStyle = isActive ? COLOR_SPOUSE_EX : '#e8a2ac';
+                    ctx.font = 'bold 9px system-ui, sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText('✕', line.markX, line.markY + 0.5);
+                } else {
+                    /* Married — small heart dot, brighter when active */
+                    ctx.setLineDash([]);
+                    ctx.beginPath();
+                    ctx.arc(line.markX, line.markY, isActive ? 4.5 : 3.5, 0, Math.PI * 2);
+                    ctx.fillStyle = isActive ? COLOR_SPOUSE_ACTIVE : '#e7b6b6';
+                    ctx.fill();
+                    ctx.strokeStyle = COLOR_BG;
+                    ctx.lineWidth = 1.5;
+                    ctx.stroke();
+                }
             }
         }
-
-        /* ---- Parent-child brackets ---- */
         ctx.setLineDash([]);
+    }
 
-        /* Group parents → children for bracket drawing */
-        const familyMap = new Map<string, { parentIds: string[]; childIds: string[] }>();
-        for (const edge of parentEdges) {
-            /* edge: sourceId=parent, targetId=child, type='PARENT' */
-            const child = nodeMap.get(edge.targetId);
-            if (!child) continue;
-            const parentNode = nodeMap.get(edge.sourceId);
-            if (!parentNode) continue;
+    private strokeBracket(ctx: CanvasRenderingContext2D, b: BracketGeom) {
+        ctx.lineJoin = 'round';
+        ctx.lineCap = 'round';
+        ctx.beginPath();
 
-            /* Find all parents of this child (there may be 2) */
-            const childParentEdges = parentEdges.filter(e => e.targetId === edge.targetId);
-            const parentIds = childParentEdges
-                .map(e => e.sourceId)
-                .filter(id => nodeMap.has(id))
-                .sort();
-            const key = parentIds.join(',');
+        /* Vertical stem: parent junction → barY */
+        ctx.moveTo(b.stemX, b.stemTopY);
+        ctx.lineTo(b.stemX, b.barY);
 
-            if (!familyMap.has(key)) {
-                familyMap.set(key, { parentIds, childIds: [] });
-            }
-            const fam = familyMap.get(key)!;
-            if (!fam.childIds.includes(edge.targetId)) {
-                fam.childIds.push(edge.targetId);
-            }
+        /* For each child: horizontal to child X, then vertical down */
+        for (const drop of b.drops) {
+            ctx.moveTo(b.stemX, b.barY);
+            ctx.lineTo(drop.x, b.barY);
+            ctx.lineTo(drop.x, drop.topY);
         }
 
-        /* Pre-compute bracket geometry */
-        interface BracketInfo {
-            familyKey: string;
-            junctionX: number;
-            parentBottomY: number;
-            childTopY: number;
-            childPositions: ViewportNode[];
-            color: string;
-        }
-
-        const brackets: BracketInfo[] = [];
-
-        for (const [familyKey, family] of familyMap) {
-            const parentPositions = family.parentIds
-                .map(id => nodeMap.get(id))
-                .filter((n): n is ViewportNode => !!n);
-            if (parentPositions.length === 0) continue;
-
-            const childPositions = family.childIds
-                .map(id => nodeMap.get(id))
-                .filter((n): n is ViewportNode => !!n)
-                .sort((a, b) => a.x - b.x);
-            if (childPositions.length === 0) continue;
-
-            const junctionX = parentPositions.reduce((s, p) => s + p.x, 0) / parentPositions.length;
-            const parentBottomY = parentPositions[0].y + NODE_H / 2;
-            const childTopY = Math.min(...childPositions.map(c => c.y)) - NODE_H / 2;
-
-            /* Stable color: hash the family key */
-            let h = 0;
-            for (let i = 0; i < familyKey.length; i++) h = ((h << 5) - h + familyKey.charCodeAt(i)) | 0;
-            const color = lod === 'far'
-                ? '#94a3b8'
-                : BRACKET_PALETTE[((h % BRACKET_PALETTE.length) + BRACKET_PALETTE.length) % BRACKET_PALETTE.length];
-
-            brackets.push({ familyKey, junctionX, parentBottomY, childTopY, childPositions, color });
-        }
-
-        /* ---- Stagger: assign each family a unique horizontal-bar Y ----
-         * The gap between parent-row bottom and child-row top is ~760px
-         * (V_GAP 900 - NODE_H 140). All horizontal bars live in this gap
-         * at distinct Y levels so they NEVER touch nodes. */
-        const STAGGER_STEP = 20;
-
-        const bandKey = (b: BracketInfo) =>
-            `${Math.round(b.parentBottomY)}:${Math.round(b.childTopY)}`;
-        const bandGroups = new Map<string, BracketInfo[]>();
-        for (const b of brackets) {
-            const k = bandKey(b);
-            if (!bandGroups.has(k)) bandGroups.set(k, []);
-            bandGroups.get(k)!.push(b);
-        }
-
-        /* Distribute bar Y levels evenly in the middle 60% of the gap */
-        const barYMap = new Map<string, number>();
-        for (const group of bandGroups.values()) {
-            if (group.length === 0) continue;
-            group.sort((a, b) => a.junctionX - b.junctionX);
-            const gapTop = group[0].parentBottomY;
-            const gapBot = group[0].childTopY;
-            const gapH = gapBot - gapTop;
-            const margin = gapH * 0.2;
-            const usable = gapH - 2 * margin;
-            const step = group.length > 1
-                ? Math.min(STAGGER_STEP, usable / (group.length - 1))
-                : 0;
-            const totalSpan = step * (group.length - 1);
-            const startY = gapTop + margin + (usable - totalSpan) / 2;
-            for (let i = 0; i < group.length; i++) {
-                barYMap.set(group[i].familyKey, startY + i * step);
-            }
-        }
-
-        /* ---- Draw: only horizontal + vertical lines ----
-         *  junction vertical↓ barY horizontal→ childX vertical↓ childTop
-         *  All horizontals are in the gap zone where no nodes exist. */
-        for (const b of brackets) {
-            const barY = barYMap.get(b.familyKey) ??
-                (b.parentBottomY + b.childTopY) / 2;
-
-            ctx.strokeStyle = b.color;
-            ctx.lineWidth = lod === 'far' ? 1 / this.zoom : 1.5;
-            ctx.beginPath();
-
-            /* Vertical stem: parent junction → barY */
-            ctx.moveTo(b.junctionX, b.parentBottomY);
-            ctx.lineTo(b.junctionX, barY);
-
-            /* For each child: horizontal to child X, then vertical down */
-            for (const child of b.childPositions) {
-                ctx.moveTo(b.junctionX, barY);
-                ctx.lineTo(child.x, barY);
-                ctx.moveTo(child.x, barY);
-                ctx.lineTo(child.x, child.y - NODE_H / 2);
-            }
-
-            ctx.stroke();
-        }
+        ctx.stroke();
     }
 
     /* ---- Node drawing ---- */
 
+    private displayName(node: ViewportNode): { first: string; last: string } {
+        if (!this.isUrdu) {
+            return { first: node.firstName || '?', last: node.lastName || '' };
+        }
+        const key = `${node.firstName}|${node.lastName}`;
+        let cached = this.urduCache.get(key);
+        if (!cached) {
+            cached = `${toUrdu(node.firstName || '')}\u0000${toUrdu(node.lastName || '')}`;
+            this.urduCache.set(key, cached);
+        }
+        const [first, last] = cached.split('\u0000');
+        return { first: first || '?', last: last || '' };
+    }
+
+    private initials(node: ViewportNode): string {
+        const a = (node.firstName || '?').trim()[0] ?? '?';
+        const b = (node.lastName || '').trim()[0] ?? '';
+        return (a + b).toUpperCase();
+    }
+
+    private nameFont(size: number, bold = false): string {
+        if (this.isUrdu) {
+            return `${bold ? '700 ' : ''}${size}px "Noto Nastaliq Urdu", serif`;
+        }
+        return `${bold ? '600 ' : ''}${size}px system-ui, -apple-system, sans-serif`;
+    }
+
     private drawNode(ctx: CanvasRenderingContext2D, node: ViewportNode, lod: 'far' | 'mid' | 'close') {
         const isFemale = node.gender === 'female';
-        const fillColor = isFemale ? '#f472b6' : '#60a5fa';
         const isSelected = node.id === this.selectedId;
         const isCenter = node.id === this.centerId;
 
+        /* Avatar colors */
+        const gradTop = node.isDeceased ? '#d6d3d1' : isFemale ? '#f9a8d4' : '#93c5fd';
+        const gradBottom = node.isDeceased ? '#a8a29e' : isFemale ? '#ec4899' : '#3b82f6';
+        const flatColor = node.isDeceased ? '#b8b2ac' : isFemale ? '#f472b6' : '#60a5fa';
+
         if (lod === 'far') {
-            /* Colored dot */
-            const r = 10;
+            /* Colored dot — clamp to a minimum on-screen size */
+            const r = Math.max(10, 3.5 / this.zoom);
             ctx.beginPath();
             ctx.arc(node.x, node.y, r, 0, Math.PI * 2);
-            ctx.fillStyle = fillColor;
-            ctx.globalAlpha = node.isDeceased ? 0.4 : 0.9;
+            ctx.fillStyle = flatColor;
+            ctx.globalAlpha = node.isDeceased ? 0.55 : 0.95;
             ctx.fill();
             ctx.globalAlpha = 1;
 
-            if (isSelected) {
-                ctx.strokeStyle = '#facc15';
-                ctx.lineWidth = 3;
-            } else if (isCenter) {
-                ctx.strokeStyle = '#84cc16';
-                ctx.lineWidth = 3;
-            } else {
-                ctx.strokeStyle = 'white';
-                ctx.lineWidth = 2;
+            if (isSelected || isCenter) {
+                ctx.strokeStyle = isSelected ? COLOR_SELECTED : COLOR_CENTER;
+                ctx.lineWidth = Math.max(2, 1 / this.zoom);
+                ctx.stroke();
             }
-            ctx.stroke();
             return;
         }
 
         if (lod === 'mid') {
-            /* Circle + 1-line name */
-            const r = 28;
+            /* Initials disc + first name */
+            const r = 26;
+            const cy = node.y - 8;
+
+            const grad = ctx.createLinearGradient(node.x, cy - r, node.x, cy + r);
+            grad.addColorStop(0, gradTop);
+            grad.addColorStop(1, gradBottom);
+
             ctx.beginPath();
-            ctx.arc(node.x, node.y - 10, r, 0, Math.PI * 2);
-            ctx.fillStyle = node.isDeceased ? '#d1d5db' : fillColor;
+            ctx.arc(node.x, cy, r, 0, Math.PI * 2);
+            ctx.fillStyle = grad;
             ctx.fill();
 
             if (isSelected) {
-                ctx.strokeStyle = '#84cc16';
-                ctx.lineWidth = 4;
+                ctx.strokeStyle = COLOR_SELECTED;
+                ctx.lineWidth = 3.5;
             } else if (isCenter) {
-                ctx.strokeStyle = '#84cc16';
+                ctx.strokeStyle = COLOR_CENTER;
                 ctx.lineWidth = 3;
             } else {
-                ctx.strokeStyle = 'white';
+                ctx.strokeStyle = '#ffffff';
                 ctx.lineWidth = 2;
             }
             ctx.stroke();
 
-            /* Name */
-            ctx.fillStyle = '#374151';
-            ctx.font = '12px system-ui, sans-serif';
+            /* Initials */
+            ctx.fillStyle = '#ffffff';
+            ctx.font = '700 16px system-ui, -apple-system, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(this.initials(node), node.x, cy + 1);
+
+            /* Name with halo for readability */
+            ctx.font = this.nameFont(12);
             ctx.textAlign = 'center';
             ctx.textBaseline = 'top';
-            const name = node.firstName || '?';
-            ctx.fillText(name, node.x, node.y + 24, NODE_W);
+            ctx.lineJoin = 'round';
+            const { first } = this.displayName(node);
+            ctx.strokeStyle = COLOR_HALO;
+            ctx.lineWidth = 3.5;
+            ctx.strokeText(first, node.x, node.y + 24, NODE_W);
+            ctx.fillStyle = node.isDeceased ? COLOR_NAME_SUB : COLOR_NAME;
+            ctx.fillText(first, node.x, node.y + 24, NODE_W);
             return;
         }
 
-        /* ---- Close LOD — full card ---- */
+        /* ---- Close LOD — floating avatar + labels (no card) ---- */
         const cx = node.x;
-        const cy = node.y;
-        /* Selection ring */
-        if (isSelected) {
+        const avatarCy = node.y + AVATAR_CY;
+
+        /* Selection / center glow ring behind the avatar */
+        if (isSelected || isCenter) {
             ctx.save();
-            ctx.shadowColor = 'rgba(132,204,22,0.4)';
-            ctx.shadowBlur = 12;
+            ctx.shadowColor = isSelected
+                ? 'rgba(5,150,105,0.45)'
+                : 'rgba(16,185,129,0.30)';
+            ctx.shadowBlur = 16;
             ctx.beginPath();
-            ctx.arc(cx, cy - 10, AVATAR_R + 6, 0, Math.PI * 2);
-            ctx.strokeStyle = '#84cc16';
-            ctx.lineWidth = 4;
+            ctx.arc(cx, avatarCy, AVATAR_R + 5, 0, Math.PI * 2);
+            ctx.strokeStyle = isSelected ? COLOR_SELECTED : COLOR_CENTER;
+            ctx.lineWidth = isSelected ? 3 : 2.5;
             ctx.stroke();
             ctx.restore();
         }
 
-        /* Avatar circle */
-        ctx.save();
-        ctx.beginPath();
-        ctx.arc(cx, cy - 10, AVATAR_R, 0, Math.PI * 2);
-        ctx.closePath();
-        ctx.clip();
+        /* Avatar circle with gender gradient + soft drop shadow */
+        const grad = ctx.createLinearGradient(cx, avatarCy - AVATAR_R, cx, avatarCy + AVATAR_R);
+        grad.addColorStop(0, gradTop);
+        grad.addColorStop(1, gradBottom);
 
-        /* Try drawing loaded avatar image */
-        const avatarSrc = isFemale ? '/woman.png' : '/man.png';
-        const img = getImage(avatarSrc);
-        if (img) {
-            if (node.isDeceased) ctx.globalAlpha = 0.5;
-            ctx.drawImage(
-                img,
-                cx - AVATAR_R,
-                cy - 10 - AVATAR_R,
-                AVATAR_R * 2,
-                AVATAR_R * 2,
-            );
-            ctx.globalAlpha = 1;
-        } else {
-            /* Fallback colored circle */
-            ctx.fillStyle = node.isDeceased ? '#d1d5db' : fillColor;
-            ctx.fill();
-        }
+        ctx.save();
+        ctx.shadowColor = 'rgba(41,37,36,0.18)';
+        ctx.shadowBlur = 8;
+        ctx.shadowOffsetY = 3;
+        ctx.beginPath();
+        ctx.arc(cx, avatarCy, AVATAR_R, 0, Math.PI * 2);
+        ctx.fillStyle = grad;
+        ctx.fill();
         ctx.restore();
 
-        /* Border ring */
+        /* Crisp white rim */
         ctx.beginPath();
-        ctx.arc(cx, cy - 10, AVATAR_R, 0, Math.PI * 2);
-        if (isSelected) {
-            ctx.strokeStyle = '#84cc16';
-            ctx.lineWidth = 4;
-        } else if (isCenter) {
-            ctx.strokeStyle = '#84cc16';
-            ctx.lineWidth = 3;
-        } else {
-            ctx.strokeStyle = 'white';
-            ctx.lineWidth = 3;
-        }
+        ctx.arc(cx, avatarCy, AVATAR_R, 0, Math.PI * 2);
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 2.5;
         ctx.stroke();
 
-        /* Deceased indicator */
-        if (node.isDeceased) {
-            ctx.globalAlpha = 0.6;
-        }
-
-        /* Name label */
-        ctx.fillStyle = '#374151';
-        ctx.font = 'bold 13px system-ui, sans-serif';
+        /* Initials inside avatar */
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '700 21px system-ui, -apple-system, sans-serif';
         ctx.textAlign = 'center';
-        ctx.textBaseline = 'top';
-        const displayName = isCenter ? 'me' : (node.firstName || '?');
-        ctx.fillText(displayName, cx, cy + AVATAR_R - 2, NODE_W - 10);
+        ctx.textBaseline = 'middle';
+        ctx.fillText(this.initials(node), cx, avatarCy + 1);
 
-        /* Last name (smaller) */
-        if (node.lastName) {
-            ctx.font = '11px system-ui, sans-serif';
-            ctx.fillStyle = '#6b7280';
-            ctx.fillText(node.lastName, cx, cy + AVATAR_R + 14, NODE_W - 10);
+        /* Deceased marker — small muted ring badge */
+        if (node.isDeceased) {
+            const bx = cx + AVATAR_R - 8;
+            const by = avatarCy - AVATAR_R + 8;
+            ctx.beginPath();
+            ctx.arc(bx, by, 7, 0, Math.PI * 2);
+            ctx.fillStyle = '#78716c';
+            ctx.fill();
+            ctx.strokeStyle = COLOR_BG;
+            ctx.lineWidth = 2;
+            ctx.stroke();
+            ctx.fillStyle = '#ffffff';
+            ctx.font = '700 9px system-ui, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('✦', bx, by + 0.5);
         }
 
-        ctx.globalAlpha = 1;
+        /* Names — halo stroke keeps text readable over grid/lines */
+        const { first, last } = this.displayName(node);
+        const firstY = node.y + (this.isUrdu ? 30 : 32);
+        ctx.font = this.nameFont(13.5, true);
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.lineJoin = 'round';
+        ctx.strokeStyle = COLOR_HALO;
+        ctx.lineWidth = 4;
+        ctx.strokeText(first, cx, firstY, NODE_W + 20);
+        ctx.fillStyle = node.isDeceased ? '#78716c' : COLOR_NAME;
+        ctx.fillText(first, cx, firstY, NODE_W + 20);
+
+        if (last) {
+            const lastY = node.y + (this.isUrdu ? 54 : 50);
+            ctx.font = this.nameFont(11);
+            ctx.strokeStyle = COLOR_HALO;
+            ctx.lineWidth = 3.5;
+            ctx.strokeText(last, cx, lastY, NODE_W + 10);
+            ctx.fillStyle = COLOR_NAME_SUB;
+            ctx.fillText(last, cx, lastY, NODE_W + 10);
+        }
+
+        /* "You" chip above the avatar */
+        if (isCenter) {
+            const chipW = 36;
+            const chipH = 16;
+            const chipX = cx - chipW / 2;
+            const chipY = avatarCy - AVATAR_R - chipH - 4;
+            roundRectPath(ctx, chipX, chipY, chipW, chipH, 8);
+            ctx.fillStyle = COLOR_CENTER;
+            ctx.fill();
+            ctx.fillStyle = '#ffffff';
+            ctx.font = '700 9px system-ui, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('YOU', cx, chipY + chipH / 2 + 0.5);
+        }
     }
 
     /* ------------------------------------------------------------------ */
@@ -1057,5 +1503,10 @@ export class CanvasTreeRenderer {
             x: node.x * this.zoom + this.offset.x,
             y: node.y * this.zoom + this.offset.y,
         };
+    }
+
+    /** Current zoom (for overlay scaling decisions) */
+    getZoom(): number {
+        return this.zoom;
     }
 }

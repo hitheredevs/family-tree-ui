@@ -43,6 +43,8 @@ export interface AppState {
 	undoStack: UndoEntry[];
 	loading: boolean;
 	error: string | null;
+	/** Bumped after any tree mutation — the canvas reloads when it changes */
+	treeVersion: number;
 }
 
 /* ------------------------------------------------------------------ */
@@ -68,7 +70,8 @@ export type AppAction =
 	| { type: 'OPEN_MANAGE_RELATIONSHIPS_MODAL'; personId: string }
 	| { type: 'CLOSE_MANAGE_RELATIONSHIPS_MODAL' }
 	| { type: 'PUSH_UNDO'; entry: UndoEntry }
-	| { type: 'POP_UNDO' };
+	| { type: 'POP_UNDO' }
+	| { type: 'TREE_MUTATED' };
 
 /* ------------------------------------------------------------------ */
 /*  Initial state                                                      */
@@ -92,6 +95,7 @@ const initialState: AppState = {
 	undoStack: [],
 	loading: false,
 	error: null,
+	treeVersion: 0,
 };
 
 /* ------------------------------------------------------------------ */
@@ -190,6 +194,9 @@ function reducer(state: AppState, action: AppAction): AppState {
 				undoStack: state.undoStack.slice(0, -1),
 			};
 
+		case 'TREE_MUTATED':
+			return { ...state, treeVersion: state.treeVersion + 1 };
+
 		default:
 			return state;
 	}
@@ -204,6 +211,7 @@ interface FamilyTreeContextType {
 	dispatch: Dispatch<AppAction>;
 	currentUser: User | null;
 	centerPersonId: string;
+	treeVersion: number;
 	refreshTree: () => Promise<void>;
 }
 
@@ -248,7 +256,14 @@ export function FamilyTreeProvider({ children, initialUser }: ProviderProps) {
 
 	return (
 		<FamilyTreeContext.Provider
-			value={{ state, dispatch, currentUser, centerPersonId, refreshTree }}
+			value={{
+				state,
+				dispatch,
+				currentUser,
+				centerPersonId,
+				treeVersion: state.treeVersion,
+				refreshTree,
+			}}
 		>
 			{children}
 		</FamilyTreeContext.Provider>

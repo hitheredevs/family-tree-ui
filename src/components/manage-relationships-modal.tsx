@@ -71,6 +71,7 @@ export function ManageRelationshipsModal() {
 			});
 
 			await loadRelationships();
+			dispatch({ type: 'TREE_MUTATED' });
 			await refreshTree();
 		} catch (err) {
 			setError(
@@ -106,6 +107,7 @@ export function ManageRelationshipsModal() {
 
 			setTargetPersonId('');
 			await loadRelationships();
+			dispatch({ type: 'TREE_MUTATED' });
 			await refreshTree();
 		} catch (err) {
 			setError(
@@ -129,24 +131,26 @@ export function ManageRelationshipsModal() {
 
 	return (
 		<div
-			className='fixed inset-0 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 p-0 sm:p-4'
+			className='modal-backdrop fixed inset-0 bg-stone-900/50 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 p-0 sm:p-4'
 			onClick={handleClose}
 		>
 			<div
-				className='bg-white w-full sm:max-w-lg bg-opacity-100 rounded-t-[32px] sm:rounded-[32px] shadow-2xl p-6 sm:p-8 transform transition-transform duration-300 translate-y-0 max-h-[90vh] overflow-y-auto'
+				className='modal-card bg-white w-full sm:max-w-lg rounded-t-[32px] sm:rounded-[32px] shadow-2xl shadow-stone-900/20 p-6 sm:p-8 max-h-[90vh] overflow-y-auto'
 				onClick={(e) => e.stopPropagation()}
 			>
-				<div className='w-12 h-1.5 bg-gray-200 rounded-full mx-auto mb-6 sm:hidden'></div>
+				<div className='w-12 h-1.5 bg-stone-200 rounded-full mx-auto mb-6 sm:hidden'></div>
 				<div className='flex items-center justify-between mb-6 px-2'>
-					<h2 className='text-2xl font-bold text-gray-800'>Manage Arrows</h2>
+					<h2 className='text-2xl font-bold text-stone-800 tracking-tight'>
+						Manage Relationships
+					</h2>
 					<button
 						onClick={handleClose}
-						className='text-gray-400 hover:text-gray-600 bg-gray-100 rounded-full p-2 leading-none'
+						className='text-stone-400 hover:text-stone-600 bg-stone-100 rounded-full p-2 leading-none'
 					>
 						✕
 					</button>
 				</div>
-				<p className='px-2 mb-6 text-sm text-gray-500 font-medium'>
+				<p className='px-2 mb-6 text-sm text-stone-500 font-medium'>
 					{person.firstName} {person.lastName}
 				</p>
 
@@ -158,13 +162,13 @@ export function ManageRelationshipsModal() {
 
 				{/* Existing relationships */}
 				<div className='mb-6 px-2'>
-					<h3 className='text-sm font-bold tracking-wide text-gray-400 uppercase mb-4'>
+					<h3 className='text-[11px] font-bold tracking-widest text-stone-400 uppercase mb-4'>
 						Existing Relationships
 					</h3>
 					{loading ? (
-						<p className='text-sm text-gray-400'>Loading…</p>
+						<p className='text-sm text-stone-400'>Loading…</p>
 					) : relationships.length === 0 ? (
-						<p className='text-sm text-gray-400 bg-gray-50 rounded-xl p-4'>
+						<p className='text-sm text-stone-400 bg-stone-50 rounded-xl p-4'>
 							No relationships found.
 						</p>
 					) : (
@@ -172,14 +176,14 @@ export function ManageRelationshipsModal() {
 							{relationships.map((rel) => (
 								<div
 									key={rel.id}
-									className='flex items-center justify-between bg-gray-50/50 border border-gray-100 rounded-xl px-4 py-3'
+									className='flex items-center justify-between bg-stone-50/50 border border-stone-100 rounded-xl px-4 py-3'
 								>
 									<div className='text-[15px]'>
-										<span className='text-lime-500 font-semibold'>
+										<span className='text-emerald-500 font-semibold'>
 											{rel.relationship_type.toLowerCase()}
 										</span>
-										<span className='text-gray-400 mx-1.5'>of</span>
-										<span className='font-semibold text-gray-800 tracking-tight'>
+										<span className='text-stone-400 mx-1.5'>of</span>
+										<span className='font-semibold text-stone-800 tracking-tight'>
 											{personName(rel.target_person_id)}
 										</span>
 									</div>
@@ -196,14 +200,14 @@ export function ManageRelationshipsModal() {
 					)}
 				</div>
 
-				{/* Add new arrow */}
-				<div className='border-t border-gray-100 pt-6 px-2'>
-					<h3 className='text-sm font-bold tracking-wide text-gray-400 uppercase mb-4'>
-						Add New Arrow
+				{/* Add new relationship */}
+				<div className='border-t border-stone-100 pt-6 px-2'>
+					<h3 className='text-[11px] font-bold tracking-widest text-stone-400 uppercase mb-4'>
+						Add New Relationship
 					</h3>
 					<div className='space-y-4'>
 						<div>
-							<label className='block text-sm font-semibold text-gray-700 mb-1.5'>
+							<label className='block text-sm font-semibold text-stone-700 mb-1.5'>
 								Target Person
 							</label>
 							<PersonCombobox
@@ -215,7 +219,7 @@ export function ManageRelationshipsModal() {
 						</div>
 
 						<div>
-							<label className='block text-sm font-semibold text-gray-700 mb-1.5'>
+							<label className='block text-sm font-semibold text-stone-700 mb-1.5'>
 								Relationship Type
 							</label>
 							<select
@@ -223,7 +227,7 @@ export function ManageRelationshipsModal() {
 								onChange={(e) =>
 									setRelationshipType(e.target.value as api.RelationshipType)
 								}
-								className='w-full px-4 py-3.5 bg-gray-50 border-transparent focus:bg-white focus:border-lime-500 focus:ring-2 focus:ring-lime-200 rounded-xl text-gray-800 transition-colors appearance-none'
+								className='w-full px-4 py-3.5 bg-stone-50 border-transparent focus:bg-white focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200 rounded-xl text-stone-800 transition-colors appearance-none'
 							>
 								<option value='PARENT'>{person.firstName} is PARENT of</option>
 								<option value='CHILD'>{person.firstName} is CHILD of</option>
@@ -234,7 +238,7 @@ export function ManageRelationshipsModal() {
 						<button
 							onClick={handleAddArrow}
 							disabled={!targetPersonId || adding}
-							className='w-full py-4 mt-2 px-4 bg-lime-500 text-white rounded-xl text-[15px] font-semibold hover:bg-lime-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm shadow-lime-200'
+							className='w-full py-4 mt-2 px-4 bg-emerald-500 text-white rounded-xl text-[15px] font-semibold hover:bg-emerald-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm shadow-emerald-200'
 						>
 							{adding ? 'Adding…' : 'Add Relationship'}
 						</button>

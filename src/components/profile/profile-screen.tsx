@@ -2,7 +2,7 @@ import { useState } from 'react';
 import {
 	Calendar,
 	Heart,
-	MoreVertical,
+	X,
 	MapPin,
 	FileText,
 	Edit,
@@ -18,12 +18,14 @@ import {
 	ExternalLink,
 	Copy,
 	KeyRound,
+	Users,
+	ChevronRight,
 } from 'lucide-react';
+import type { Person } from '../../types';
 import {
 	useFamilyTree,
 	usePersonDetails,
 } from '../../state/family-tree-context';
-import { getAvatarUrl } from '../../utils/avatar';
 import { getRelationship } from '../../utils/relationship';
 import { canEdit } from '../../state/permissions';
 import { formatBirthday } from '../../utils/birthdate';
@@ -62,6 +64,63 @@ function buildSocialUrl(type: string, url?: string, handle?: string): string {
 	return '#';
 }
 
+function FamilyChipRow({
+	label,
+	people,
+	isUrdu,
+	onSelect,
+}: {
+	label: string;
+	people: Person[];
+	isUrdu: boolean;
+	onSelect: (id: string) => void;
+}) {
+	return (
+		<div>
+			<p className='mb-2 text-[11px] font-bold uppercase tracking-widest text-stone-400'>
+				{label}
+			</p>
+			<div className='flex flex-wrap gap-2'>
+				{people.map((p) => {
+					const name = `${p.firstName} ${p.lastName || ''}`.trim();
+					return (
+						<button
+							key={p.id}
+							onClick={() => onSelect(p.id)}
+							className='flex items-center gap-2 rounded-full bg-stone-50 py-1.5 pl-1.5 pr-3 ring-1 ring-stone-200/70 transition-all hover:bg-emerald-50 hover:ring-emerald-200 active:scale-95'
+						>
+							<span
+								className={`flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-bold text-white bg-gradient-to-b ${
+									p.gender === 'female'
+										? 'from-pink-300 to-pink-500'
+										: 'from-blue-300 to-blue-500'
+								} ${p.isDeceased ? 'grayscale' : ''}`}
+							>
+								{(p.firstName?.[0] ?? '?').toUpperCase()}
+							</span>
+							<span className='text-sm font-semibold text-stone-700'>
+								{isUrdu ? (
+									<span
+										style={{
+											fontFamily: "'Noto Nastaliq Urdu', serif",
+											direction: 'rtl' as const,
+										}}
+									>
+										{toUrdu(name)}
+									</span>
+								) : (
+									name
+								)}
+							</span>
+							<ChevronRight size={14} className='-mr-0.5 text-stone-300' />
+						</button>
+					);
+				})}
+			</div>
+		</div>
+	);
+}
+
 export const ProfileScreen = () => {
 	const { state, dispatch, currentUser, refreshTree } = useFamilyTree();
 	const { isUrdu } = useLanguage();
@@ -89,6 +148,16 @@ export const ProfileScreen = () => {
 		: false;
 
 	const isSelf = currentUser?.personId === person.id;
+
+	/* Family members for quick navigation */
+	const toPeople = (ids: string[] | undefined) =>
+		(ids ?? []).map((id) => state.people[id]).filter(Boolean);
+	const parents = toPeople(person.parentIds);
+	const spouses = [
+		...toPeople(person.spouseIds),
+		...toPeople(person.exSpouseIds),
+	];
+	const children = toPeople(person.childrenIds);
 
 	async function handleGeneratePasswordLink(
 		purpose: 'setup-password' | 'reset-password',
@@ -134,6 +203,7 @@ export const ProfileScreen = () => {
 		try {
 			await api.deletePerson(personId);
 			dispatch({ type: 'SELECT_PERSON', personId: null });
+			dispatch({ type: 'TREE_MUTATED' });
 			await refreshTree();
 		} catch (err) {
 			alert(err instanceof Error ? err.message : 'Failed to delete');
@@ -144,32 +214,33 @@ export const ProfileScreen = () => {
 	}
 
 	return (
-		<div className='flex h-full w-full flex-col bg-gray-50'>
+		<div className='flex h-full w-full flex-col bg-stone-50'>
 			{/* Header */}
-			<div className='flex items-center justify-between px-6 py-4 mt-safe'>
-				<button className='rounded-full bg-white p-2 shadow-sm opacity-0 pointer-events-none'>
-					<MoreVertical size={20} />
-				</button>
+			<div className='flex items-center justify-end px-6 py-4 mt-safe'>
 				<button
-					className='rounded-full bg-white p-2 shadow-sm'
+					title='Clear selection'
+					className='rounded-full bg-white p-2 shadow-sm shadow-stone-900/5 ring-1 ring-stone-200/60 text-stone-500 hover:text-stone-700 transition-colors'
 					onClick={() => dispatch({ type: 'SELECT_PERSON', personId: null })}
 				>
-					<MoreVertical size={20} className='text-gray-600' />
+					<X size={18} />
 				</button>
 			</div>
 
 			{/* Profile Info */}
 			<div className='mt-2 flex flex-col items-center px-4 text-center'>
 				<div
-					className={`relative mb-4 h-32 w-32 shrink-0 overflow-hidden rounded-full border-4 border-white shadow-lg ${person.isDeceased ? 'grayscale opacity-80' : ''}`}
+					className={`relative mb-4 flex h-32 w-32 shrink-0 items-center justify-center rounded-full border-4 border-white shadow-lg text-5xl font-bold text-white bg-gradient-to-b ${
+						person.isDeceased
+							? 'from-stone-300 to-stone-500'
+							: person.gender === 'female'
+								? 'from-pink-300 to-pink-500'
+								: 'from-blue-300 to-blue-500'
+					}`}
 				>
-					<img
-						src={getAvatarUrl(person)}
-						alt={person.firstName}
-						className='h-full w-full object-cover'
-					/>
+					{(person.firstName?.[0] ?? '?').toUpperCase()}
+					{(person.lastName?.[0] ?? '').toUpperCase()}
 				</div>
-				<h1 className='text-2xl font-bold text-gray-800 flex items-center justify-center gap-2 flex-wrap'>
+				<h1 className='text-2xl font-bold text-stone-800 flex items-center justify-center gap-2 flex-wrap'>
 					{isUrdu ? (
 						<span
 							style={{
@@ -186,12 +257,12 @@ export const ProfileScreen = () => {
 						</>
 					)}
 					{person.isDeceased && (
-						<span className='rounded-full bg-gray-800 px-2.5 py-0.5 text-xs font-semibold tracking-wide text-white uppercase ml-1'>
+						<span className='rounded-full bg-stone-800 px-2.5 py-0.5 text-xs font-semibold tracking-wide text-white uppercase ml-1'>
 							{isUrdu ? 'مرحوم' : 'Late'}
 						</span>
 					)}
 				</h1>
-				<p className='mt-1 text-sm font-semibold text-lime-600 uppercase tracking-widest'>
+				<p className='mt-1 text-sm font-semibold text-emerald-600 uppercase tracking-widest'>
 					{relationshipText}
 				</p>
 			</div>
@@ -203,7 +274,7 @@ export const ProfileScreen = () => {
 						onClick={() =>
 							dispatch({ type: 'SET_EDITING', personId: person.id })
 						}
-						className='flex items-center space-x-2 rounded-full bg-lime-500 px-6 py-2.5 text-sm font-medium text-white shadow-md transition-colors hover:bg-lime-600'
+						className='flex items-center space-x-2 rounded-full bg-emerald-500 px-6 py-2.5 text-sm font-medium text-white shadow-md transition-colors hover:bg-emerald-600'
 					>
 						<Edit size={16} />
 						<span>{isUrdu ? 'پروفائل میں ترمیم' : 'Edit Profile'}</span>
@@ -213,47 +284,88 @@ export const ProfileScreen = () => {
 
 			{/* Details Section */}
 			<div className='mt-8 flex-1 overflow-y-auto px-6 pb-24 space-y-6'>
+				{/* Family — quick navigation to parents / spouse / children */}
+				{(parents.length > 0 || spouses.length > 0 || children.length > 0) && (
+					<div className='rounded-3xl bg-white p-6 shadow-sm border border-stone-100 space-y-4'>
+						<h3 className='flex items-center text-sm font-medium text-stone-600'>
+							<Users className='mr-2 text-emerald-500' size={18} />
+							{isUrdu ? 'خاندان' : 'Family'}
+						</h3>
+
+						{parents.length > 0 && (
+							<FamilyChipRow
+								label={isUrdu ? 'والدین' : 'Parents'}
+								people={parents}
+								isUrdu={isUrdu}
+								onSelect={(id) =>
+									dispatch({ type: 'SELECT_PERSON', personId: id })
+								}
+							/>
+						)}
+						{spouses.length > 0 && (
+							<FamilyChipRow
+								label={isUrdu ? 'شریک حیات' : 'Spouse'}
+								people={spouses}
+								isUrdu={isUrdu}
+								onSelect={(id) =>
+									dispatch({ type: 'SELECT_PERSON', personId: id })
+								}
+							/>
+						)}
+						{children.length > 0 && (
+							<FamilyChipRow
+								label={isUrdu ? 'اولاد' : 'Children'}
+								people={children}
+								isUrdu={isUrdu}
+								onSelect={(id) =>
+									dispatch({ type: 'SELECT_PERSON', personId: id })
+								}
+							/>
+						)}
+					</div>
+				)}
+
 				{/* Basic Info */}
-				<div className='space-y-4 rounded-3xl bg-white p-6 shadow-sm border border-gray-100'>
+				<div className='space-y-4 rounded-3xl bg-white p-6 shadow-sm border border-stone-100'>
 					{person.bio && (
-						<div className='pb-4 border-b border-gray-100'>
-							<span className='flex items-center text-sm font-medium text-gray-600 mb-2'>
-								<FileText className='mr-2 text-lime-500' size={18} />
+						<div className='pb-4 border-b border-stone-100'>
+							<span className='flex items-center text-sm font-medium text-stone-600 mb-2'>
+								<FileText className='mr-2 text-emerald-500' size={18} />
 								{isUrdu ? 'سوانح حیات' : 'Biography'}
 							</span>
-							<p className='text-sm text-gray-500 leading-relaxed whitespace-pre-wrap'>
+							<p className='text-sm text-stone-500 leading-relaxed whitespace-pre-wrap'>
 								{person.bio}
 							</p>
 						</div>
 					)}
 
-					<div className='flex items-center justify-between border-b border-gray-100 pb-3 last:border-0 last:pb-0'>
-						<span className='flex items-center text-sm font-medium text-gray-600'>
-							<MapPin className='mr-3 text-lime-500' size={18} />
+					<div className='flex items-center justify-between border-b border-stone-100 pb-3 last:border-0 last:pb-0'>
+						<span className='flex items-center text-sm font-medium text-stone-600'>
+							<MapPin className='mr-3 text-emerald-500' size={18} />
 							{isUrdu ? 'مقام:' : 'Living in:'}
 						</span>
-						<span className='text-sm text-gray-500 text-right'>
+						<span className='text-sm text-stone-500 text-right'>
 							{person.location || (isUrdu ? 'نامعلوم' : 'Unknown')}
 						</span>
 					</div>
 
-					<div className='flex items-center justify-between border-b border-gray-100 pb-3 last:border-0 last:pb-0'>
-						<span className='flex items-center text-sm font-medium text-gray-600'>
-							<Calendar className='mr-3 text-lime-500' size={18} />
+					<div className='flex items-center justify-between border-b border-stone-100 pb-3 last:border-0 last:pb-0'>
+						<span className='flex items-center text-sm font-medium text-stone-600'>
+							<Calendar className='mr-3 text-emerald-500' size={18} />
 							{isUrdu ? 'تاریخ پیدائش:' : 'Birthday:'}
 						</span>
-						<span className='text-sm text-gray-500 text-right'>
+						<span className='text-sm text-stone-500 text-right'>
 							{formatBirthday(person.birthDate)}
 						</span>
 					</div>
 
 					{person.isDeceased && person.deathYear && (
-						<div className='flex items-center justify-between border-b border-gray-100 pb-3 last:border-0 last:pb-0'>
-							<span className='flex items-center text-sm font-medium text-gray-600'>
-								<Heart className='mr-3 text-gray-400' size={18} />
+						<div className='flex items-center justify-between border-b border-stone-100 pb-3 last:border-0 last:pb-0'>
+							<span className='flex items-center text-sm font-medium text-stone-600'>
+								<Heart className='mr-3 text-stone-400' size={18} />
 								{isUrdu ? 'سال وفات:' : 'Death Year:'}
 							</span>
-							<span className='text-sm text-gray-500 text-right'>
+							<span className='text-sm text-stone-500 text-right'>
 								{person.deathYear}
 							</span>
 						</div>
@@ -262,10 +374,10 @@ export const ProfileScreen = () => {
 
 				{/* Phone Number */}
 				{(person.phoneNumber || isSelf) && (
-					<div className='rounded-3xl bg-white p-6 shadow-sm border border-gray-100 space-y-3'>
+					<div className='rounded-3xl bg-white p-6 shadow-sm border border-stone-100 space-y-3'>
 						<div className='flex items-center justify-between'>
-							<span className='flex items-center text-sm font-medium text-gray-600'>
-								<Phone className='mr-2 text-lime-500' size={18} />
+							<span className='flex items-center text-sm font-medium text-stone-600'>
+								<Phone className='mr-2 text-emerald-500' size={18} />
 								{isUrdu ? 'فون نمبر' : 'Phone Number'}
 							</span>
 							{person.phoneNumber && person.phoneVerified ? (
@@ -275,7 +387,7 @@ export const ProfileScreen = () => {
 							) : null}
 						</div>
 
-						<p className='text-sm text-gray-500'>
+						<p className='text-sm text-stone-500'>
 							{person.phoneNumber ||
 								(isUrdu ? 'ابھی شامل نہیں' : 'Not added yet')}
 						</p>
@@ -284,9 +396,9 @@ export const ProfileScreen = () => {
 
 				{/* Social Links */}
 				{person.socialLinks && person.socialLinks.length > 0 && (
-					<div className='rounded-3xl bg-white p-6 shadow-sm border border-gray-100 space-y-3'>
-						<h3 className='flex items-center text-sm font-medium text-gray-600'>
-							<LinkIcon className='mr-2 text-lime-500' size={18} />
+					<div className='rounded-3xl bg-white p-6 shadow-sm border border-stone-100 space-y-3'>
+						<h3 className='flex items-center text-sm font-medium text-stone-600'>
+							<LinkIcon className='mr-2 text-emerald-500' size={18} />
 							{isUrdu ? 'سوشل لنکس' : 'Social Links'}
 						</h3>
 						<div className='space-y-2'>
@@ -299,15 +411,15 @@ export const ProfileScreen = () => {
 										href={href}
 										target='_blank'
 										rel='noopener noreferrer'
-										className='flex items-center gap-3 rounded-xl bg-gray-50 px-4 py-3 text-sm text-gray-700 transition-colors hover:bg-gray-100'
+										className='flex items-center gap-3 rounded-xl bg-stone-50 px-4 py-3 text-sm text-stone-700 transition-colors hover:bg-stone-100'
 									>
-										<Icon size={18} className='shrink-0 text-gray-500' />
+										<Icon size={18} className='shrink-0 text-stone-500' />
 										<span className='flex-1 truncate'>
 											{link.handle || link.url || link.type}
 										</span>
 										<ExternalLink
 											size={14}
-											className='shrink-0 text-gray-400'
+											className='shrink-0 text-stone-400'
 										/>
 									</a>
 								);
@@ -374,9 +486,9 @@ export const ProfileScreen = () => {
 
 							{generatedLink && (
 								<div className='space-y-2 rounded-xl border border-indigo-100 bg-white p-3'>
-									<div className='text-xs text-gray-500'>
+									<div className='text-xs text-stone-500'>
 										Username:{' '}
-										<span className='font-semibold text-gray-700'>
+										<span className='font-semibold text-stone-700'>
 											{generatedLink.username}
 										</span>{' '}
 										• valid until{' '}
@@ -386,13 +498,13 @@ export const ProfileScreen = () => {
 										type='text'
 										readOnly
 										value={generatedLink.link}
-										className='w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600'
+										className='w-full rounded-lg border border-stone-200 bg-stone-50 px-3 py-2 text-xs text-stone-600'
 									/>
 									<div className='flex gap-2'>
 										<button
 											type='button'
 											onClick={handleCopyLink}
-											className='flex flex-1 items-center justify-center gap-2 rounded-lg bg-gray-100 px-3 py-2 text-xs font-semibold text-gray-700 transition-colors hover:bg-gray-200'
+											className='flex flex-1 items-center justify-center gap-2 rounded-lg bg-stone-100 px-3 py-2 text-xs font-semibold text-stone-700 transition-colors hover:bg-stone-200'
 										>
 											<Copy size={14} /> Copy
 										</button>
@@ -419,9 +531,9 @@ export const ProfileScreen = () => {
 											relationType: 'parent',
 										})
 									}
-									className='flex items-center justify-center gap-2 rounded-xl bg-gray-50 py-2.5 text-xs font-medium text-gray-700 hover:bg-gray-100 border border-gray-200 shadow-sm'
+									className='flex items-center justify-center gap-2 rounded-xl bg-stone-50 py-2.5 text-xs font-medium text-stone-700 hover:bg-stone-100 border border-stone-200 shadow-sm'
 								>
-									<UserPlus size={14} className='text-gray-500' /> Add Parent
+									<UserPlus size={14} className='text-stone-500' /> Add Parent
 								</button>
 							)}
 
@@ -433,9 +545,9 @@ export const ProfileScreen = () => {
 										relationType: 'spouse',
 									})
 								}
-								className='flex items-center justify-center gap-2 rounded-xl bg-gray-50 py-2.5 text-xs font-medium text-gray-700 hover:bg-gray-100 border border-gray-200 shadow-sm'
+								className='flex items-center justify-center gap-2 rounded-xl bg-stone-50 py-2.5 text-xs font-medium text-stone-700 hover:bg-stone-100 border border-stone-200 shadow-sm'
 							>
-								<UserPlus size={14} className='text-gray-500' /> Add Spouse
+								<UserPlus size={14} className='text-stone-500' /> Add Spouse
 							</button>
 
 							<button
@@ -446,9 +558,9 @@ export const ProfileScreen = () => {
 										relationType: 'child',
 									})
 								}
-								className='flex items-center justify-center gap-2 rounded-xl bg-gray-50 py-2.5 text-xs font-medium text-gray-700 hover:bg-gray-100 border border-gray-200 shadow-sm'
+								className='flex items-center justify-center gap-2 rounded-xl bg-stone-50 py-2.5 text-xs font-medium text-stone-700 hover:bg-stone-100 border border-stone-200 shadow-sm'
 							>
-								<UserPlus size={14} className='text-gray-500' /> Add Child
+								<UserPlus size={14} className='text-stone-500' /> Add Child
 							</button>
 
 							{person.parentIds.length > 0 && (
@@ -460,9 +572,9 @@ export const ProfileScreen = () => {
 											relationType: 'sibling',
 										})
 									}
-									className='flex items-center justify-center gap-2 rounded-xl bg-gray-50 py-2.5 text-xs font-medium text-gray-700 hover:bg-gray-100 border border-gray-200 shadow-sm'
+									className='flex items-center justify-center gap-2 rounded-xl bg-stone-50 py-2.5 text-xs font-medium text-stone-700 hover:bg-stone-100 border border-stone-200 shadow-sm'
 								>
-									<UserPlus size={14} className='text-gray-500' /> Add Sibling
+									<UserPlus size={14} className='text-stone-500' /> Add Sibling
 								</button>
 							)}
 						</div>
@@ -479,7 +591,7 @@ export const ProfileScreen = () => {
 							<LinkIcon size={16} /> Manage Relations & Arrows
 						</button>
 
-						<div className='pt-5 mt-2 border-t border-gray-100'>
+						<div className='pt-5 mt-2 border-t border-stone-100'>
 							{confirmDelete ? (
 								<div className='flex flex-col space-y-3'>
 									<p className='text-xs text-red-600 text-center font-medium'>
@@ -488,7 +600,7 @@ export const ProfileScreen = () => {
 									<div className='flex gap-2'>
 										<button
 											onClick={() => setConfirmDelete(false)}
-											className='flex-1 rounded-xl bg-gray-100 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200'
+											className='flex-1 rounded-xl bg-stone-100 py-2 text-sm font-medium text-stone-700 hover:bg-stone-200'
 										>
 											Cancel
 										</button>

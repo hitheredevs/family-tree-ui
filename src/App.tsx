@@ -67,10 +67,27 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
 
 	if (state.loading && Object.keys(state.people).length === 0) {
 		return (
-			<div className='flex h-screen w-full items-center justify-center bg-gray-50'>
-				<div className='text-center'>
-					<div className='mb-4 inline-block h-8 w-8 animate-spin rounded-full border-4 border-t-transparent border-lime-500' />
-					<p className='text-sm text-gray-500'>Loading family tree…</p>
+			<div className='flex h-screen w-full flex-col bg-stone-50'>
+				{/* Skeleton canvas: ghost family cards + connectors */}
+				<div className='relative flex-1 overflow-hidden'>
+					<div className='absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2'>
+						<div className='flex flex-col items-center gap-10'>
+							<div className='flex gap-8'>
+								<div className='skeleton h-28 w-24 rounded-2xl' />
+								<div className='skeleton h-28 w-24 rounded-2xl' />
+							</div>
+							<div className='skeleton h-1 w-40 rounded-full' />
+							<div className='flex gap-8'>
+								<div className='skeleton h-28 w-24 rounded-2xl' />
+								<div className='skeleton h-28 w-24 rounded-2xl' />
+								<div className='skeleton h-28 w-24 rounded-2xl' />
+							</div>
+						</div>
+					</div>
+					<div className='absolute bottom-10 left-1/2 -translate-x-1/2 text-center'>
+						<div className='mb-3 inline-block h-6 w-6 animate-spin rounded-full border-[3px] border-t-transparent border-emerald-500' />
+						<p className='text-sm text-stone-500'>Loading your family tree…</p>
+					</div>
 				</div>
 			</div>
 		);
@@ -78,12 +95,12 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
 
 	if (state.error && Object.keys(state.people).length === 0) {
 		return (
-			<div className='flex h-screen w-full items-center justify-center bg-gray-50'>
-				<div className='text-center'>
+			<div className='flex h-screen w-full items-center justify-center bg-stone-50'>
+				<div className='text-center max-w-xs'>
 					<p className='mb-4 text-sm text-red-500'>{state.error}</p>
 					<button
 						onClick={refreshTree}
-						className='rounded-lg bg-lime-500 px-4 py-2 text-sm text-white hover:bg-lime-600'
+						className='rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white shadow-md shadow-emerald-600/20 hover:bg-emerald-700 transition-colors'
 					>
 						Retry
 					</button>
@@ -135,7 +152,7 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
 
 				{/* Undo indicator */}
 				{state.undoStack.length > 0 && (
-					<div className='absolute bottom-24 right-4 md:bottom-4 z-10 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs text-gray-500 shadow-md'>
+					<div className='absolute bottom-24 right-4 md:bottom-4 z-10 rounded-xl bg-stone-800/90 px-3 py-1.5 text-xs text-stone-100 shadow-lg backdrop-blur-sm'>
 						⌘Z to undo: {state.undoStack[state.undoStack.length - 1].label}
 					</div>
 				)}
@@ -211,8 +228,8 @@ function App() {
 
 	if (checking) {
 		return (
-			<div className='w-full h-screen flex items-center justify-center bg-gray-50'>
-				<div className='inline-block w-8 h-8 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin' />
+			<div className='w-full h-screen flex items-center justify-center bg-stone-50'>
+				<div className='inline-block w-8 h-8 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin' />
 			</div>
 		);
 	}

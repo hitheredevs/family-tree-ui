@@ -73,13 +73,13 @@ export function PersonCombobox({
 				placeholder={placeholder}
 				className={
 					className ||
-					'w-full appearance-none rounded-xl border-transparent bg-gray-50 px-4 py-3 text-sm text-gray-800 focus:border-lime-500 focus:bg-white focus:ring-2 focus:ring-lime-200'
+					'w-full appearance-none rounded-xl border-transparent bg-stone-50 px-4 py-3 text-sm text-stone-800 focus:border-emerald-500 focus:bg-white focus:ring-2 focus:ring-emerald-200'
 				}
 			/>
 			{isOpen && (
-				<ul className='absolute z-10 mt-1 max-h-48 w-full overflow-auto rounded-xl border border-gray-100 bg-white py-1 shadow-xl'>
+				<ul className='absolute z-10 mt-1 max-h-48 w-full overflow-auto rounded-xl border border-stone-100 bg-white py-1 shadow-xl'>
 					{filtered.length === 0 ? (
-						<li className='px-4 py-3 text-sm text-gray-500'>
+						<li className='px-4 py-3 text-sm text-stone-500'>
 							No people found.
 						</li>
 					) : (
@@ -91,15 +91,15 @@ export function PersonCombobox({
 									onChange(p.id);
 									setIsOpen(false);
 								}}
-								className='flex cursor-pointer items-center gap-3 px-4 py-2 hover:bg-lime-50'
+								className='flex cursor-pointer items-center gap-3 px-4 py-2 hover:bg-emerald-50'
 							>
 								<img
 									src={getAvatarUrl(p)}
-									className='h-8 w-8 shrink-0 rounded-full border border-gray-100 object-cover'
+									className='h-8 w-8 shrink-0 rounded-full border border-stone-100 object-cover'
 									alt=''
 								/>
 								<div className='min-w-0'>
-									<div className='truncate text-sm font-medium text-gray-800'>
+									<div className='truncate text-sm font-medium text-stone-800'>
 										{isUrdu ? (
 											<span
 												style={{
@@ -114,7 +114,7 @@ export function PersonCombobox({
 										)}
 									</div>
 									{getDisambiguation(p) && (
-										<div className='truncate text-xs text-gray-500'>
+										<div className='truncate text-xs text-stone-500'>
 											{getDisambiguation(p)}
 										</div>
 									)}
