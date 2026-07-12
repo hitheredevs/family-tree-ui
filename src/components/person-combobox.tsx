@@ -99,7 +99,7 @@ export function PersonCombobox({
 									alt=''
 								/>
 								<div className='min-w-0'>
-									<div className='truncate text-sm font-medium text-stone-800'>
+									<div className='truncate text-sm font-medium text-stone-800 uppercase'>
 										{isUrdu ? (
 											<span
 												style={{

@@ -98,7 +98,7 @@ function FamilyChipRow({
 							>
 								{(p.firstName?.[0] ?? '?').toUpperCase()}
 							</span>
-							<span className='text-sm font-semibold text-stone-700'>
+							<span className='text-sm font-semibold text-stone-700 uppercase'>
 								{isUrdu ? (
 									<span
 										style={{
@@ -240,7 +240,7 @@ export const ProfileScreen = () => {
 					{(person.firstName?.[0] ?? '?').toUpperCase()}
 					{(person.lastName?.[0] ?? '').toUpperCase()}
 				</div>
-				<h1 className='text-2xl font-bold text-stone-800 flex items-center justify-center gap-2 flex-wrap'>
+				<h1 className='text-2xl font-bold text-stone-800 flex items-center justify-center gap-2 flex-wrap uppercase'>
 					{isUrdu ? (
 						<span
 							style={{

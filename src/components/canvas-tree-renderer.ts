@@ -186,6 +186,9 @@ export class CanvasTreeRenderer {
     private centerId: string = '';
     private callbacks: RendererCallbacks;
 
+    /* Direct-lineage focus filter — when set, only these ids render */
+    private focusSet: Set<string> | null = null;
+
     /* Language */
     private isUrdu = false;
     private urduCache = new Map<string, string>();
@@ -309,6 +312,16 @@ export class CanvasTreeRenderer {
             this.centerId = id;
             this.markDirty();
         }
+    }
+
+    /**
+     * Limit rendering to a set of person ids (direct-lineage mode),
+     * or null to show everyone.
+     */
+    setFocusFilter(ids: Set<string> | null) {
+        this.focusSet = ids;
+        this.geometryDirty = true;
+        this.markDirty();
     }
 
     /** Switch canvas labels between English and Urdu */
@@ -884,7 +897,10 @@ export class CanvasTreeRenderer {
         this.brackets = [];
 
         const nodeMap = new Map<string, ViewportNode>();
-        for (const n of this.allNodes) nodeMap.set(n.id, n);
+        for (const n of this.allNodes) {
+            if (this.focusSet && !this.focusSet.has(n.id)) continue;
+            nodeMap.set(n.id, n);
+        }
 
         /* ---- Spouse lines (deduped pairs) ---- */
         const drawnSpouses = new Set<string>();
@@ -1109,6 +1125,7 @@ export class CanvasTreeRenderer {
 
         const visibleNodes = this.allNodes.filter(
             (n) =>
+                (!this.focusSet || this.focusSet.has(n.id)) &&
                 n.x >= vp.minX - margin &&
                 n.x <= vp.maxX + margin &&
                 n.y >= vp.minY - margin &&
@@ -1285,7 +1302,11 @@ export class CanvasTreeRenderer {
 
     private displayName(node: ViewportNode): { first: string; last: string } {
         if (!this.isUrdu) {
-            return { first: node.firstName || '?', last: node.lastName || '' };
+            /* English names always display in capitals */
+            return {
+                first: (node.firstName || '?').toUpperCase(),
+                last: (node.lastName || '').toUpperCase(),
+            };
         }
         const key = `${node.firstName}|${node.lastName}`;
         let cached = this.urduCache.get(key);

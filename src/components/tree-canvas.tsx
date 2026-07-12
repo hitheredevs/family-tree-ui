@@ -8,7 +8,9 @@ import {
 	Maximize,
 	Users,
 	X,
+	GitBranch,
 } from 'lucide-react';
+import type { Person } from '../types';
 import { useFamilyTree } from '../state/family-tree-context';
 import { CanvasTreeRenderer } from './canvas-tree-renderer';
 import { NodeOverlay } from './node-overlay';
@@ -22,6 +24,60 @@ import { toUrdu } from '../utils/transliterate';
 
 const ctrlBtn =
 	'flex h-9 w-9 items-center justify-center rounded-xl bg-white/95 text-stone-600 shadow-md shadow-stone-900/5 ring-1 ring-stone-200/70 backdrop-blur-sm transition-all hover:bg-white hover:text-emerald-600 active:scale-95';
+
+const LINEAGE_KEY = 'family-tree-lineage-only';
+
+/**
+ * People visible in "My line" mode: the user's direct ancestors,
+ * their own spouses, their siblings plus the siblings' children,
+ * and all of the user's descendants.
+ */
+function computeLineageSet(
+	people: Record<string, Person>,
+	centerId: string,
+): Set<string> {
+	const set = new Set<string>();
+	const center = people[centerId];
+	if (!center) return set;
+	set.add(centerId);
+
+	/* Direct ancestors, all the way up */
+	const up = [...(center.parentIds ?? [])];
+	while (up.length > 0) {
+		const id = up.pop()!;
+		if (set.has(id)) continue;
+		set.add(id);
+		up.push(...(people[id]?.parentIds ?? []));
+	}
+
+	/* Own spouses (incl. ex) */
+	for (const sid of [
+		...(center.spouseIds ?? []),
+		...(center.exSpouseIds ?? []),
+	]) {
+		set.add(sid);
+	}
+
+	/* Siblings and their children */
+	for (const pid of center.parentIds ?? []) {
+		for (const cid of people[pid]?.childrenIds ?? []) {
+			if (cid === centerId) continue;
+			set.add(cid);
+			for (const gc of people[cid]?.childrenIds ?? []) set.add(gc);
+		}
+	}
+
+	/* All descendants */
+	const down = [...(center.childrenIds ?? [])];
+	while (down.length > 0) {
+		const id = down.pop()!;
+		if (set.has(id)) continue;
+		set.add(id);
+		down.push(...(people[id]?.childrenIds ?? []));
+	}
+
+	return set;
+}
 
 export function TreeCanvas({ onPersonOpen }: { onPersonOpen?: () => void }) {
 	const { state, dispatch, centerPersonId, refreshTree, treeVersion } =
@@ -39,6 +95,32 @@ export function TreeCanvas({ onPersonOpen }: { onPersonOpen?: () => void }) {
 
 	/* ---- stats badge ---- */
 	const [stats, setStats] = useState<{ totalPeople: number } | null>(null);
+
+	/* ---- "My line" (direct lineage) switch, persisted ---- */
+	const [lineageOnly, setLineageOnly] = useState(() => {
+		try {
+			return localStorage.getItem(LINEAGE_KEY) === 'true';
+		} catch {
+			return false;
+		}
+	});
+
+	const lineageSet = useMemo(
+		() =>
+			lineageOnly && centerPersonId
+				? computeLineageSet(state.people, centerPersonId)
+				: null,
+		[lineageOnly, centerPersonId, state.people],
+	);
+
+	useEffect(() => {
+		try {
+			localStorage.setItem(LINEAGE_KEY, String(lineageOnly));
+		} catch {
+			/* ignore */
+		}
+		rendererRef.current?.setFocusFilter(lineageSet);
+	}, [lineageOnly, lineageSet]);
 
 	/* Overlay mount state — position is set imperatively (no re-render per frame) */
 	const [overlayVisible, setOverlayVisible] = useState(false);
@@ -135,7 +217,14 @@ export function TreeCanvas({ onPersonOpen }: { onPersonOpen?: () => void }) {
 			renderer.destroy();
 			rendererRef.current = null;
 		};
+		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [centerPersonId, syncOverlay]);
+
+	/* Apply persisted lineage filter to a freshly mounted renderer */
+	useEffect(() => {
+		rendererRef.current?.setFocusFilter(lineageSet);
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [centerPersonId]);
 
 	/* ---- language sync ---- */
 
@@ -179,11 +268,12 @@ export function TreeCanvas({ onPersonOpen }: { onPersonOpen?: () => void }) {
 			.getLoadedNodes()
 			.filter(
 				(n) =>
-					n.firstName.toLowerCase().includes(q) ||
-					n.lastName.toLowerCase().includes(q),
+					(!lineageSet || lineageSet.has(n.id)) &&
+					(n.firstName.toLowerCase().includes(q) ||
+						n.lastName.toLowerCase().includes(q)),
 			)
 			.slice(0, 8);
-	}, [searchQuery]);
+	}, [searchQuery, lineageSet]);
 
 	function jumpToPerson(personId: string) {
 		rendererRef.current?.jumpToNode(personId, 0.9);
@@ -242,8 +332,24 @@ export function TreeCanvas({ onPersonOpen }: { onPersonOpen?: () => void }) {
 			className='w-full h-full overflow-hidden relative select-none touch-none'
 			style={{ background: '#faf9f7' }}
 		>
-			{/* ── Top-right: search + refresh ── */}
+			{/* ── Top-right: my-line toggle + search + refresh ── */}
 			<div className='absolute top-4 right-4 z-10 flex gap-2'>
+				<button
+					onClick={(e) => {
+						e.stopPropagation();
+						setLineageOnly((v) => !v);
+					}}
+					title='Show only my direct line'
+					className={`flex items-center gap-1.5 h-9 px-3 rounded-xl text-sm font-medium shadow-md shadow-stone-900/5 ring-1 backdrop-blur-sm transition-all active:scale-95 ${
+						lineageOnly
+							? 'bg-emerald-600 text-white ring-emerald-600 hover:bg-emerald-700'
+							: 'bg-white/95 text-stone-600 ring-stone-200/70 hover:text-emerald-600'
+					}`}
+				>
+					<GitBranch size={14} />
+					<span className='hidden sm:inline'>My Line</span>
+				</button>
+
 				<div className='relative flex items-center h-9'>
 					{isSearchOpen ? (
 						<div className='flex items-center bg-white/95 backdrop-blur-sm rounded-xl ring-1 ring-stone-200/70 shadow-md shadow-stone-900/5 px-2 h-full'>
@@ -303,7 +409,7 @@ export function TreeCanvas({ onPersonOpen }: { onPersonOpen?: () => void }) {
 										{(p.firstName?.[0] ?? '?').toUpperCase()}
 									</div>
 									<div className='min-w-0'>
-										<div className='font-semibold text-stone-800 truncate'>
+										<div className='font-semibold text-stone-800 truncate uppercase'>
 											{isUrdu ? (
 												<span
 													style={{

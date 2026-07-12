@@ -183,7 +183,7 @@ export function ManageRelationshipsModal() {
 											{rel.relationship_type.toLowerCase()}
 										</span>
 										<span className='text-stone-400 mx-1.5'>of</span>
-										<span className='font-semibold text-stone-800 tracking-tight'>
+										<span className='font-semibold text-stone-800 tracking-tight uppercase'>
 											{personName(rel.target_person_id)}
 										</span>
 									</div>

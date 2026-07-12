@@ -533,7 +533,7 @@ export function EditPerson() {
 										key={pid}
 										className='flex items-center justify-between rounded-lg bg-stone-50 px-3 py-2'
 									>
-										<span className='text-sm text-stone-700'>
+										<span className='text-sm text-stone-700 uppercase'>
 											{parent ? `${parent.firstName} ${parent.lastName}` : pid}
 										</span>
 										<button
@@ -590,7 +590,7 @@ export function EditPerson() {
 										key={sid}
 										className='flex items-center justify-between rounded-lg bg-stone-50 px-3 py-2'
 									>
-										<span className='text-sm text-stone-700'>
+										<span className='text-sm text-stone-700 uppercase'>
 											{spouse ? `${spouse.firstName} ${spouse.lastName}` : sid}
 										</span>
 										<div className='flex gap-2'>
@@ -619,7 +619,7 @@ export function EditPerson() {
 										key={sid}
 										className='flex items-center justify-between rounded-lg bg-red-50 px-3 py-2 border border-red-100'
 									>
-										<span className='text-sm text-stone-500'>
+										<span className='text-sm text-stone-500 uppercase'>
 											{spouse ? `${spouse.firstName} ${spouse.lastName}` : sid}
 											<span className='ml-1.5 text-xs text-red-400'>(ex)</span>
 										</span>

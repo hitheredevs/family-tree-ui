@@ -285,7 +285,10 @@ export function AddPersonModal() {
 	}
 
 	const title = isContextual
-		? buildTitle(addPersonModal.relationType ?? null, relative?.firstName ?? '')
+		? buildTitle(
+				addPersonModal.relationType ?? null,
+				(relative?.firstName ?? '').toUpperCase(),
+			)
 		: 'Add Relative';
 
 	return (
@@ -304,7 +307,7 @@ export function AddPersonModal() {
 					{/* Header with context chip */}
 					<div className='mb-6'>
 						{isContextual && relative && (
-							<div className='mb-2 inline-flex items-center gap-2 rounded-full border border-stone-200 bg-stone-50 px-3 py-1 text-xs font-medium text-stone-600'>
+							<div className='mb-2 inline-flex items-center gap-2 rounded-full border border-stone-200 bg-stone-50 px-3 py-1 text-xs font-medium text-stone-600 uppercase'>
 								<img
 									src={getAvatarUrl(relative)}
 									className='h-4 w-4 rounded-full object-cover'

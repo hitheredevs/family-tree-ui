@@ -184,7 +184,7 @@ export function NodeOverlay({
 						animationDelay: '135ms',
 					}}
 					{...press(() => onGoToPerson(parents[0].id))}
-					title={parents.map((p) => p.firstName).join(' & ')}
+					title={parents.map((p) => p.firstName.toUpperCase()).join(' & ')}
 				>
 					<ArrowUp size={12} />
 					Parents
@@ -260,7 +260,7 @@ export function NodeOverlay({
 								>
 									{(s.firstName?.[0] ?? '?').toUpperCase()}
 								</span>
-								<span className='truncate text-xs font-semibold text-stone-700'>
+								<span className='truncate text-xs font-semibold text-stone-700 uppercase'>
 									{displayName(s)}
 								</span>
 							</button>
