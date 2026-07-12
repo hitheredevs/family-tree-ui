@@ -337,9 +337,14 @@ export function AddPersonModal() {
 		targRelationType === 'parent' &&
 		(selectedRelative?.parentIds?.length ?? 0) >= 2;
 
+	const siblingBlocked =
+		targRelationType === 'sibling' &&
+		(selectedRelative?.parentIds?.length ?? 0) === 0;
+
 	const canSubmit =
 		Boolean(targRelativeId) &&
 		!parentSlotsFull &&
+		!siblingBlocked &&
 		(mode === 'create'
 			? firstName.trim().length > 0
 			: existingPersonId.length > 0);
@@ -587,12 +592,32 @@ export function AddPersonModal() {
 					</div>
 
 					<div className='space-y-4'>
-						{/* Full form — only shown when opened from menu without context */}
+						{/* Full form — only shown when opened from menu without context.
+						    Reads as a sentence: Add a [Child] … of [ABDUL]. */}
 						{!isContextual && (
 							<>
 								<div>
 									<label className='mb-1.5 block text-sm font-semibold text-stone-700'>
-										Related To
+										I&rsquo;m adding a&hellip;
+									</label>
+									<RelationChips
+										value={relationType}
+										onChange={setRelationType}
+										siblingDisabled={
+											selectedRelative ? !canAddSibling : false
+										}
+									/>
+								</div>
+								<div>
+									<label className='mb-1.5 block text-sm font-semibold text-stone-700'>
+										{
+											{
+												parent: 'Parent of…',
+												child: 'Child of…',
+												spouse: 'Spouse of…',
+												sibling: 'Sibling of…',
+											}[relationType]
+										}
 									</label>
 									<PersonCombobox
 										people={Object.values(state.people)}
@@ -600,28 +625,18 @@ export function AddPersonModal() {
 										onChange={setRelativePersonId}
 									/>
 								</div>
-								<div>
-									<label className='mb-1.5 block text-sm font-semibold text-stone-700'>
-										{selectedRelative ? (
-											<>
-												They are{' '}
-												<span className='uppercase text-emerald-700'>
-													{selectedRelative.firstName}
-												</span>
-												&rsquo;s…
-											</>
-										) : (
-											'Relationship'
-										)}
-									</label>
-									<RelationChips
-										value={relationType}
-										onChange={setRelationType}
-										siblingDisabled={!canAddSibling}
-									/>
-								</div>
 							</>
 						)}
+
+						{/* Sibling picked but anchor has no parents yet */}
+						{targRelationType === 'sibling' &&
+							selectedRelative &&
+							selectedRelative.parentIds.length === 0 && (
+								<div className='rounded-xl border border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-800'>
+									{(selectedRelative.firstName ?? '').toUpperCase()} has no
+									parents linked yet — add a parent first, then siblings.
+								</div>
+							)}
 
 						{/* Smart one-tap suggestions */}
 						{suggestions.length > 0 && !parentSlotsFull && (
@@ -888,12 +903,6 @@ export function AddPersonModal() {
 							</div>
 						)}
 
-						{error && (
-							<div className='rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-600'>
-								{error}
-							</div>
-						)}
-
 						{/* Live preview — confirms the direction before saving */}
 						{showPreview && (
 							<div className='rounded-xl bg-stone-50 px-4 py-3 text-sm text-stone-600'>
@@ -909,6 +918,12 @@ export function AddPersonModal() {
 									{relationWord(targRelationType, previewGender)}
 								</span>
 								.
+							</div>
+						)}
+
+						{error && (
+							<div className='rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-600'>
+								{error}
 							</div>
 						)}
 

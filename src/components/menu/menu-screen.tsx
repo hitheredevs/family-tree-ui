@@ -48,7 +48,7 @@ export const MenuScreen: React.FC<MenuScreenProps> = ({ onLogout }) => {
 			{/* Header */}
 			<div className='mx-auto w-full max-w-2xl px-6 pt-8 pb-5'>
 				<h1 className='text-2xl font-bold text-stone-800 tracking-tight'>
-					Menu
+					Settings
 				</h1>
 				<div className='mt-2 flex items-center gap-2.5'>
 					<div className='flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-emerald-400 to-teal-600 text-sm font-bold text-white'>
