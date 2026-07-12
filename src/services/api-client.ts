@@ -381,3 +381,22 @@ export async function getRelationshipsForPerson(
 ): Promise<RelationshipResponse[]> {
     return apiFetch<RelationshipResponse[]>(`/relationships/person/${personId}`);
 }
+
+/* ------------------------------------------------------------------ */
+/*  AI chat                                                            */
+/* ------------------------------------------------------------------ */
+
+export interface AiChatMessage {
+    role: 'user' | 'assistant';
+    content: string;
+}
+
+export async function askAi(
+    messages: AiChatMessage[],
+    contextPersonIds: string[],
+): Promise<{ reply: string }> {
+    return apiFetch<{ reply: string }>('/ai/chat', {
+        method: 'POST',
+        body: JSON.stringify({ messages, contextPersonIds }),
+    });
+}

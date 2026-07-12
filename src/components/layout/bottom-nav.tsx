@@ -1,31 +1,61 @@
-import { Leaf, Settings, User } from 'lucide-react';
+import {
+	Leaf,
+	Settings,
+	User,
+	Users,
+	Sparkles,
+	CalendarDays,
+	Wrench,
+} from 'lucide-react';
 import React from 'react';
+import { useFamilyTree } from '../../state/family-tree-context';
+
+export type AppView =
+	| 'tree'
+	| 'people'
+	| 'ask'
+	| 'events'
+	| 'profile'
+	| 'menu'
+	| 'fixer';
 
 interface BottomNavProps {
-	onViewChange: (view: 'tree' | 'gallery' | 'profile' | 'menu') => void;
-	activeView: 'tree' | 'gallery' | 'profile' | 'menu';
+	onViewChange: (view: AppView) => void;
+	activeView: AppView;
 }
 
 export const BottomNav: React.FC<BottomNavProps> = ({
 	onViewChange,
 	activeView,
 }) => {
+	const { currentUser } = useFamilyTree();
+	const isAdmin = currentUser?.role === 'admin';
+
+	const mobileSide = (
+		view: AppView,
+		icon: React.ReactNode,
+		label: string,
+	) => (
+		<button
+			onClick={() => onViewChange(view)}
+			className={`flex flex-col items-center justify-center gap-0.5 px-2 py-1 transition-colors ${
+				activeView === view ? 'text-emerald-600' : 'text-stone-400'
+			}`}
+		>
+			{icon}
+			<span className='text-[10px] font-semibold'>{label}</span>
+		</button>
+	);
+
 	return (
 		<>
-			{/* ── Mobile bottom bar: Profile | Tree (center) | Settings ── */}
+			{/* ── Mobile bottom bar: People | Ask | Tree | Events | Profile ── */}
 			<div
-				className='flex md:hidden w-full items-center justify-around border-t border-stone-200/70 bg-white/95 px-2 pt-1.5 backdrop-blur-md'
+				className='flex md:hidden w-full items-center justify-around border-t border-stone-200/70 bg-white/95 px-1 pt-1.5 backdrop-blur-md'
 				style={{ paddingBottom: 'max(0.6rem, env(safe-area-inset-bottom))' }}
 			>
-				<button
-					onClick={() => onViewChange('profile')}
-					className={`flex flex-col items-center justify-center gap-0.5 px-4 py-1 transition-colors ${
-						activeView === 'profile' ? 'text-emerald-600' : 'text-stone-400'
-					}`}
-				>
-					<User size={22} />
-					<span className='text-[10px] font-semibold'>Profile</span>
-				</button>
+				{mobileSide('people', <Users size={21} />, 'People')}
+				{mobileSide('ask', <Sparkles size={21} />, 'Ask')}
 
 				<button
 					onClick={() => onViewChange('tree')}
@@ -38,15 +68,8 @@ export const BottomNav: React.FC<BottomNavProps> = ({
 					<Leaf size={26} />
 				</button>
 
-				<button
-					onClick={() => onViewChange('menu')}
-					className={`flex flex-col items-center justify-center gap-0.5 px-4 py-1 transition-colors ${
-						activeView === 'menu' ? 'text-emerald-600' : 'text-stone-400'
-					}`}
-				>
-					<Settings size={22} />
-					<span className='text-[10px] font-semibold'>Settings</span>
-				</button>
+				{mobileSide('events', <CalendarDays size={21} />, 'Events')}
+				{mobileSide('profile', <User size={21} />, 'Profile')}
 			</div>
 
 			{/* ── Desktop sidebar: Tree first, Settings pinned at the bottom ── */}
@@ -62,7 +85,6 @@ export const BottomNav: React.FC<BottomNavProps> = ({
 						</span>
 					</div>
 
-					{/* Main navigation */}
 					<SidebarItem
 						icon={<Leaf size={20} />}
 						label='Tree'
@@ -70,11 +92,37 @@ export const BottomNav: React.FC<BottomNavProps> = ({
 						onClick={() => onViewChange('tree')}
 					/>
 					<SidebarItem
+						icon={<Users size={20} />}
+						label='People'
+						active={activeView === 'people'}
+						onClick={() => onViewChange('people')}
+					/>
+					<SidebarItem
+						icon={<Sparkles size={20} />}
+						label='Ask'
+						active={activeView === 'ask'}
+						onClick={() => onViewChange('ask')}
+					/>
+					<SidebarItem
+						icon={<CalendarDays size={20} />}
+						label='Events'
+						active={activeView === 'events'}
+						onClick={() => onViewChange('events')}
+					/>
+					<SidebarItem
 						icon={<User size={20} />}
 						label='Profile'
 						active={activeView === 'profile'}
 						onClick={() => onViewChange('profile')}
 					/>
+					{isAdmin && (
+						<SidebarItem
+							icon={<Wrench size={20} />}
+							label='Fixer'
+							active={activeView === 'fixer'}
+							onClick={() => onViewChange('fixer')}
+						/>
+					)}
 				</div>
 
 				{/* Settings pinned to the bottom */}

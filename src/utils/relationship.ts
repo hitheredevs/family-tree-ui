@@ -1,5 +1,52 @@
 import type { Person } from '../types/person';
 
+export interface RelationStep {
+    personId: string;
+    /** How we reached this person from the previous one */
+    step: 'parent' | 'child' | 'spouse' | 'ex-spouse';
+}
+
+/**
+ * Shortest connection path from source to target (excluding source
+ * itself). Returns null when the two people are not connected.
+ */
+export function findRelationPath(
+    sourceId: string,
+    targetId: string,
+    people: Record<string, Person>,
+): RelationStep[] | null {
+    if (sourceId === targetId) return [];
+    if (!people[sourceId] || !people[targetId]) return null;
+
+    const visited = new Set<string>([sourceId]);
+    const queue: { id: string; path: RelationStep[] }[] = [
+        { id: sourceId, path: [] },
+    ];
+
+    while (queue.length > 0) {
+        const { id, path } = queue.shift()!;
+        const current = people[id];
+        if (!current) continue;
+
+        const neighbours: RelationStep[] = [
+            ...current.parentIds.map((pid) => ({ personId: pid, step: 'parent' as const })),
+            ...current.childrenIds.map((cid) => ({ personId: cid, step: 'child' as const })),
+            ...(current.spouseIds ?? []).map((sid) => ({ personId: sid, step: 'spouse' as const })),
+            ...(current.exSpouseIds ?? []).map((sid) => ({ personId: sid, step: 'ex-spouse' as const })),
+        ];
+
+        for (const next of neighbours) {
+            if (visited.has(next.personId)) continue;
+            visited.add(next.personId);
+            const nextPath = [...path, next];
+            if (next.personId === targetId) return nextPath;
+            queue.push({ id: next.personId, path: nextPath });
+        }
+    }
+
+    return null;
+}
+
 export function getRelationship(
     sourceId: string,
     targetId: string,

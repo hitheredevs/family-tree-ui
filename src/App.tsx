@@ -9,8 +9,12 @@ import { LoginScreen } from './components/login-screen';
 import { ChangePasswordScreen } from './components/change-password-screen';
 import { PasswordLinkScreen } from './components/password-link-screen';
 import { MobileContainer } from './components/layout/mobile-container';
-import { BottomNav } from './components/layout/bottom-nav';
+import { BottomNav, type AppView } from './components/layout/bottom-nav';
 import { ProfileScreen } from './components/profile/profile-screen';
+import { PeopleScreen } from './components/people/people-screen';
+import { AskScreen } from './components/ask/ask-screen';
+import { EventsScreen } from './components/events/events-screen';
+import { FixerScreen } from './components/fixer/fixer-screen';
 import type { User } from './types';
 import {
 	getToken,
@@ -27,11 +31,11 @@ import { LanguageProvider } from './state/language-context';
 
 function AppContent({ onLogout }: { onLogout: () => void }) {
 	const { state, dispatch, refreshTree } = useFamilyTree();
-	const [activeView, setActiveView] = useState<
-		'tree' | 'gallery' | 'profile' | 'menu'
-	>('tree');
+	const [activeView, setActiveView] = useState<AppView>('tree');
 
 	const handleOpenProfile = useCallback(() => setActiveView('profile'), []);
+	const handleOpenSettings = useCallback(() => setActiveView('menu'), []);
+	const handleOpenFixer = useCallback(() => setActiveView('fixer'), []);
 
 	// Load tree on mount
 	useEffect(() => {
@@ -142,8 +146,22 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
 						<TreeCanvas onPersonOpen={handleOpenProfile} />
 					</div>
 
-					{activeView === 'profile' && <ProfileScreen />}
-					{activeView === 'menu' && <MenuScreen onLogout={onLogout} />}
+					{activeView === 'profile' && (
+						<ProfileScreen onOpenSettings={handleOpenSettings} />
+					)}
+					{activeView === 'people' && (
+						<PeopleScreen onPersonOpen={handleOpenProfile} />
+					)}
+					{activeView === 'ask' && <AskScreen />}
+					{activeView === 'events' && (
+						<EventsScreen onPersonOpen={handleOpenProfile} />
+					)}
+					{activeView === 'fixer' && (
+						<FixerScreen onPersonOpen={handleOpenProfile} />
+					)}
+					{activeView === 'menu' && (
+						<MenuScreen onLogout={onLogout} onOpenFixer={handleOpenFixer} />
+					)}
 				</div>
 
 				{/* Modals that can appear on top of any view */}

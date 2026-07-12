@@ -20,6 +20,7 @@ import {
 	KeyRound,
 	Users,
 	ChevronRight,
+	Settings as SettingsIcon,
 } from 'lucide-react';
 import type { Person } from '../../types';
 import {
@@ -121,7 +122,11 @@ function FamilyChipRow({
 	);
 }
 
-export const ProfileScreen = () => {
+export const ProfileScreen = ({
+	onOpenSettings,
+}: {
+	onOpenSettings?: () => void;
+}) => {
 	const { state, dispatch, currentUser, refreshTree } = useFamilyTree();
 	const { isUrdu } = useLanguage();
 	const [confirmDelete, setConfirmDelete] = useState(false);
@@ -216,7 +221,16 @@ export const ProfileScreen = () => {
 	return (
 		<div className='flex h-full w-full flex-col bg-stone-50'>
 			{/* Header */}
-			<div className='flex items-center justify-end px-6 py-4 mt-safe'>
+			<div className='flex items-center justify-end gap-2 px-6 py-4 mt-safe'>
+				{onOpenSettings && (
+					<button
+						title='Settings'
+						className='md:hidden rounded-full bg-white p-2 shadow-sm shadow-stone-900/5 ring-1 ring-stone-200/60 text-stone-500 hover:text-stone-700 transition-colors'
+						onClick={onOpenSettings}
+					>
+						<SettingsIcon size={18} />
+					</button>
+				)}
 				<button
 					title='Clear selection'
 					className='rounded-full bg-white p-2 shadow-sm shadow-stone-900/5 ring-1 ring-stone-200/60 text-stone-500 hover:text-stone-700 transition-colors'

@@ -7,12 +7,14 @@ import {
 	KeyRound,
 	Languages,
 	ChevronRight,
+	Wrench,
 } from 'lucide-react';
 import { ChangePasswordScreen } from '../change-password-screen';
 import { useLanguage } from '../../state/language-context';
 
 interface MenuScreenProps {
 	onLogout: () => void;
+	onOpenFixer?: () => void;
 }
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
@@ -31,7 +33,10 @@ function Card({ children }: { children: React.ReactNode }) {
 	);
 }
 
-export const MenuScreen: React.FC<MenuScreenProps> = ({ onLogout }) => {
+export const MenuScreen: React.FC<MenuScreenProps> = ({
+	onLogout,
+	onOpenFixer,
+}) => {
 	const { state, dispatch, currentUser } = useFamilyTree();
 	const isAdmin = currentUser?.role === 'admin';
 	const [showChangePassword, setShowChangePassword] = useState(false);
@@ -163,6 +168,28 @@ export const MenuScreen: React.FC<MenuScreenProps> = ({ onLogout }) => {
 											<span className='text-[15px] font-semibold text-stone-800'>
 												Add Person to Tree
 											</span>
+										</div>
+										<ChevronRight size={18} className='text-stone-300' />
+									</button>
+								)}
+
+								{onOpenFixer && (
+									<button
+										onClick={onOpenFixer}
+										className='flex w-full items-center justify-between border-t border-stone-100 p-4 transition-colors hover:bg-stone-50'
+									>
+										<div className='flex items-center space-x-3'>
+											<div className='rounded-xl bg-emerald-50 p-2.5 text-emerald-600'>
+												<Wrench size={20} />
+											</div>
+											<div className='text-left'>
+												<span className='block text-[15px] font-semibold text-stone-800'>
+													Fixer
+												</span>
+												<span className='block text-xs text-stone-500'>
+													Duplicates & missing links
+												</span>
+											</div>
 										</div>
 										<ChevronRight size={18} className='text-stone-300' />
 									</button>
