@@ -326,6 +326,39 @@ export async function addRelationship(data: {
     });
 }
 
+export interface BatchRelationshipInput {
+    sourcePersonId: string;
+    targetPersonId: string;
+    relationshipType: RelationshipType;
+}
+
+/** Add several relationships in one request (single layout recompute) */
+export async function addRelationshipsBatch(
+    relationships: BatchRelationshipInput[],
+): Promise<{ relationships: RelationshipResponse[] }> {
+    return apiFetch('/relationships/batch', {
+        method: 'POST',
+        body: JSON.stringify({ relationships }),
+    });
+}
+
+export interface NewPersonRelationInput {
+    targetPersonId: string;
+    /** Relation FROM the new person TO the target */
+    relationshipType: RelationshipType;
+}
+
+/** Create a person and link all their relatives in one request */
+export async function createPersonWithRelations(payload: {
+    person: CreatePersonPayload;
+    relations: NewPersonRelationInput[];
+}): Promise<{ person: PersonResponse; relationships: RelationshipResponse[] }> {
+    return apiFetch('/persons/with-relations', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+    });
+}
+
 export async function removeRelationship(id: string): Promise<void> {
     await apiFetch<{ message: string }>(`/relationships/${id}`, {
         method: 'DELETE',

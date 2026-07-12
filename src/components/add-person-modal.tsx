@@ -1,9 +1,28 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
+import {
+	UserPlus,
+	Link2,
+	Sparkles,
+	Plus,
+	Check,
+	ArrowUp,
+	ArrowDown,
+	Heart,
+	Users,
+} from 'lucide-react';
 import { useFamilyTree } from '../state/family-tree-context';
 import { getAvatarUrl } from '../utils/avatar';
-import type { Gender } from '../types';
+import type { Gender, Person } from '../types';
 import * as api from '../services/api-client';
 import { PersonCombobox } from './person-combobox';
+import { findSimilarPeople } from '../utils/name-match';
+import { suggestLinks } from '../utils/link-suggestions';
+import {
+	getPersonFullName,
+	getPersonDisambiguation,
+	buildDuplicateNameMap,
+	buildPeopleMap,
+} from '../utils/person-labels';
 
 /* ------------------------------------------------------------------ */
 /*  Smart default helpers (all silent — never shown to user)           */
@@ -49,6 +68,74 @@ function buildTitle(relationType: string | null, relativeName: string): string {
 	return map[relationType] ?? 'Add Person';
 }
 
+type RelationKind = 'parent' | 'child' | 'spouse' | 'sibling';
+
+/** Gender-aware relation word for the live preview sentence */
+function relationWord(relation: RelationKind, gender: Gender): string {
+	const words: Record<RelationKind, Record<string, string>> = {
+		parent: { male: 'father', female: 'mother', other: 'parent' },
+		child: { male: 'son', female: 'daughter', other: 'child' },
+		spouse: { male: 'husband', female: 'wife', other: 'spouse' },
+		sibling: { male: 'brother', female: 'sister', other: 'sibling' },
+	};
+	return words[relation][gender] ?? words[relation].other;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Relation chips — always-visible icon buttons (no dropdown)         */
+/* ------------------------------------------------------------------ */
+
+const RELATION_OPTIONS: Array<{
+	value: RelationKind;
+	label: string;
+	icon: typeof ArrowUp;
+}> = [
+	{ value: 'parent', label: 'Parent', icon: ArrowUp },
+	{ value: 'child', label: 'Child', icon: ArrowDown },
+	{ value: 'spouse', label: 'Spouse', icon: Heart },
+	{ value: 'sibling', label: 'Sibling', icon: Users },
+];
+
+function RelationChips({
+	value,
+	onChange,
+	siblingDisabled,
+}: {
+	value: RelationKind;
+	onChange: (r: RelationKind) => void;
+	siblingDisabled: boolean;
+}) {
+	return (
+		<div className='grid grid-cols-4 gap-2'>
+			{RELATION_OPTIONS.map(({ value: v, label, icon: Icon }) => {
+				const disabled = v === 'sibling' && siblingDisabled;
+				const active = value === v;
+				return (
+					<button
+						key={v}
+						type='button'
+						disabled={disabled}
+						title={
+							disabled ? 'This person has no parents linked yet' : undefined
+						}
+						onClick={() => onChange(v)}
+						className={`flex flex-col items-center gap-1 rounded-xl border-2 py-2.5 text-[11px] font-semibold transition-all ${
+							active
+								? 'border-emerald-500 bg-emerald-50 text-emerald-700 shadow-sm'
+								: disabled
+									? 'cursor-not-allowed border-stone-100 bg-stone-50 text-stone-300'
+									: 'border-stone-100 bg-stone-50 text-stone-500 hover:border-stone-300'
+						}`}
+					>
+						<Icon size={16} />
+						{label}
+					</button>
+				);
+			})}
+		</div>
+	);
+}
+
 /* ------------------------------------------------------------------ */
 /*  Gender toggle (replaces the plain <select>)                        */
 /* ------------------------------------------------------------------ */
@@ -87,6 +174,24 @@ function GenderPicker({
 }
 
 /* ------------------------------------------------------------------ */
+/*  Small person chip (suggestions + duplicate guard)                  */
+/* ------------------------------------------------------------------ */
+
+function PersonInitial({ person }: { person: Person }) {
+	return (
+		<span
+			className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white bg-gradient-to-b ${
+				person.gender === 'female'
+					? 'from-pink-300 to-pink-500'
+					: 'from-blue-300 to-blue-500'
+			} ${person.isDeceased ? 'grayscale' : ''}`}
+		>
+			{(person.firstName?.[0] ?? '?').toUpperCase()}
+		</span>
+	);
+}
+
+/* ------------------------------------------------------------------ */
 /*  Main modal                                                          */
 /* ------------------------------------------------------------------ */
 
@@ -102,6 +207,10 @@ export function AddPersonModal() {
 		? state.people[addPersonModal.relativePersonId]
 		: null;
 
+	// Mode: create a brand-new person, or link someone who already exists
+	const [mode, setMode] = useState<'create' | 'link'>('create');
+	const [existingPersonId, setExistingPersonId] = useState('');
+
 	// Core form state
 	const [firstName, setFirstName] = useState('');
 	const [lastName, setLastName] = useState('');
@@ -112,11 +221,13 @@ export function AddPersonModal() {
 	const [saving, setSaving] = useState(false);
 	const [error, setError] = useState('');
 
+	// Rapid entry: keep the modal open after save and add another
+	const [addAnother, setAddAnother] = useState(false);
+	const [savedNames, setSavedNames] = useState<string[]>([]);
+
 	// Extra state for non-contextual (menu-triggered) full form
 	const [relativePersonId, setRelativePersonId] = useState('');
-	const [relationType, setRelationType] = useState<
-		'parent' | 'child' | 'spouse' | 'sibling'
-	>('child');
+	const [relationType, setRelationType] = useState<RelationKind>('child');
 
 	const firstNameRef = useRef<HTMLInputElement>(null);
 
@@ -130,6 +241,10 @@ export function AddPersonModal() {
 		setAutoLinkSpouse(true);
 		setSaving(false);
 		setFirstName('');
+		setMode('create');
+		setExistingPersonId('');
+		setAddAnother(false);
+		setSavedNames([]);
 		setRelativePersonId(addPersonModal.relativePersonId ?? '');
 		setRelationType(addPersonModal.relationType ?? 'child');
 
@@ -161,124 +276,273 @@ export function AddPersonModal() {
 		addPersonModal.relationType,
 	]);
 
+	/* ---- derived context ---- */
+
+	const targRelativeId = isContextual
+		? (addPersonModal.relativePersonId ?? '')
+		: relativePersonId;
+	const targRelationType: RelationKind = isContextual
+		? (addPersonModal.relationType ?? 'child')
+		: relationType;
+
+	const selectedRelative = targRelativeId
+		? (state.people[targRelativeId] ?? null)
+		: null;
+
+	const allPeople = useMemo(
+		() => Object.values(state.people),
+		[state.people],
+	);
+	const peopleById = useMemo(() => buildPeopleMap(allPeople), [allPeople]);
+	const duplicateNames = useMemo(
+		() => buildDuplicateNameMap(allPeople),
+		[allPeople],
+	);
+
+	/* One-tap smart link suggestions for this relative + relation */
+	const suggestions = useMemo(() => {
+		if (!addPersonModal.isOpen || !targRelativeId) return [];
+		return suggestLinks(targRelationType, targRelativeId, state.people);
+	}, [addPersonModal.isOpen, targRelativeId, targRelationType, state.people]);
+
+	/* Duplicate guard: similar existing people while typing a new name */
+	const similarPeople = useMemo(() => {
+		if (!addPersonModal.isOpen || mode !== 'create') return [];
+		return findSimilarPeople(firstName, lastName, allPeople);
+	}, [addPersonModal.isOpen, mode, firstName, lastName, allPeople]);
+
+	/* Candidates for the link-existing picker */
+	const linkCandidates = useMemo(() => {
+		if (!selectedRelative) return allPeople;
+		const exclude = new Set<string>([selectedRelative.id]);
+		if (targRelationType === 'parent') {
+			for (const id of selectedRelative.parentIds ?? []) exclude.add(id);
+		} else if (targRelationType === 'child') {
+			for (const id of selectedRelative.childrenIds ?? []) exclude.add(id);
+		} else if (targRelationType === 'spouse') {
+			for (const id of [
+				...(selectedRelative.spouseIds ?? []),
+				...(selectedRelative.exSpouseIds ?? []),
+			])
+				exclude.add(id);
+		}
+		return allPeople.filter((p) => !exclude.has(p.id));
+	}, [allPeople, selectedRelative, targRelationType]);
+
 	if (!addPersonModal.isOpen) return null;
 
-	const selectedRelative = isContextual
-		? relative
-		: relativePersonId
-			? state.people[relativePersonId]
-			: null;
 	const canAddSibling =
 		selectedRelative && selectedRelative.parentIds.length > 0;
+	const parentSlotsFull =
+		targRelationType === 'parent' &&
+		(selectedRelative?.parentIds?.length ?? 0) >= 2;
+
 	const canSubmit =
-		firstName.trim().length > 0 && (isContextual || Boolean(relativePersonId));
+		Boolean(targRelativeId) &&
+		!parentSlotsFull &&
+		(mode === 'create'
+			? firstName.trim().length > 0
+			: existingPersonId.length > 0);
 
 	// If adding a child and relative has exactly one spouse, we will auto-link in background
 	const autoSecondParent =
-		isContextual &&
-		addPersonModal.relationType === 'child' &&
-		relative?.spouseIds?.length === 1
-			? state.people[relative.spouseIds[0]]
+		targRelationType === 'child' && selectedRelative?.spouseIds?.length === 1
+			? state.people[selectedRelative.spouseIds[0]]
 			: null;
 
-	async function handleSave() {
-		const fin = firstName.trim();
-		const targRelativeId = isContextual
-			? (addPersonModal.relativePersonId ?? '')
-			: relativePersonId;
-		const targRelationType = isContextual
-			? (addPersonModal.relationType ?? 'child')
-			: relationType;
+	const showAddAnother =
+		targRelationType === 'child' || targRelationType === 'sibling';
 
-		if (!fin || !targRelativeId) return;
+	/* Live preview sentence (menu-opened form only) */
+	const previewPerson =
+		mode === 'link' && existingPersonId
+			? (state.people[existingPersonId] ?? null)
+			: null;
+	const previewName =
+		mode === 'create'
+			? firstName.trim()
+			: previewPerson
+				? getPersonFullName(previewPerson)
+				: '';
+	const previewGender: Gender =
+		mode === 'create' ? gender : ((previewPerson?.gender as Gender) ?? 'other');
+	const showPreview = Boolean(
+		!isContextual && selectedRelative && previewName && !parentSlotsFull,
+	);
+
+	/* ------------------------------------------------------------------ */
+	/*  Save helpers                                                       */
+	/* ------------------------------------------------------------------ */
+
+	function afterSave(displayName: string, undo: () => Promise<void>, label: string) {
+		dispatch({ type: 'PUSH_UNDO', entry: { label, action: undo } });
+		dispatch({ type: 'TREE_MUTATED' });
+
+		if (addAnother && showAddAnother) {
+			setSavedNames((prev) => [...prev, displayName.toUpperCase()]);
+			setFirstName('');
+			setExistingPersonId('');
+			setError('');
+			setTimeout(() => firstNameRef.current?.focus(), 60);
+			void refreshTree();
+		} else {
+			dispatch({ type: 'CLOSE_ADD_PERSON_MODAL' });
+			void refreshTree();
+		}
+	}
+
+	/** Create a brand-new person + all links in ONE request */
+	async function handleCreateSave() {
+		const fin = firstName.trim();
+		if (!fin || !targRelativeId || !selectedRelative) return;
 		setSaving(true);
 		setError('');
 
 		try {
-			const created = await api.createPerson({
-				firstName: fin,
-				lastName: lastName.trim() || undefined,
-				gender,
-				isDeceased,
-			});
+			/* Relations FROM the new person TO existing people */
+			const relations: api.NewPersonRelationInput[] = [];
 
-			/* The API creates both directions (forward + inverse) in one call,
-			 * so a single request per link is enough. */
 			if (targRelationType === 'sibling') {
-				const rel = state.people[targRelativeId];
-				if (!rel || rel.parentIds.length === 0)
+				if (selectedRelative.parentIds.length === 0) {
 					throw new Error(
 						'Cannot add sibling — this person has no parents yet.',
 					);
-				for (const parentId of rel.parentIds) {
-					await api.addRelationship({
-						sourcePersonId: parentId,
-						targetPersonId: created.id,
-						relationshipType: 'PARENT',
+				}
+				for (const parentId of selectedRelative.parentIds) {
+					relations.push({
+						targetPersonId: parentId,
+						relationshipType: 'CHILD',
 					});
 				}
-			} else {
-				const relMap: Record<string, api.RelationshipType> = {
-					child: 'PARENT',
-					parent: 'CHILD',
-					spouse: 'SPOUSE',
-				};
-
-				await api.addRelationship({
-					sourcePersonId: targRelativeId,
-					targetPersonId: created.id,
-					relationshipType: relMap[targRelationType],
+			} else if (targRelationType === 'child') {
+				relations.push({
+					targetPersonId: targRelativeId,
+					relationshipType: 'CHILD',
 				});
-
-				// When adding a spouse, optionally also link them as parent of all existing children
-				if (targRelationType === 'spouse' && adoptChildren) {
-					const rel = state.people[targRelativeId];
-					if (rel?.childrenIds?.length) {
-						for (const childId of rel.childrenIds) {
-							await api
-								.addRelationship({
-									sourcePersonId: created.id,
-									targetPersonId: childId,
-									relationshipType: 'PARENT',
-								})
-								.catch(() => {}); // non-fatal if already linked
-						}
-					}
+				if (autoLinkSpouse && autoSecondParent) {
+					relations.push({
+						targetPersonId: autoSecondParent.id,
+						relationshipType: 'CHILD',
+					});
 				}
-
-				// Auto-link spouse as second parent when adding a child
-				if (targRelationType === 'child' && autoLinkSpouse) {
-					const rel = state.people[targRelativeId];
-					const spouseId =
-						rel?.spouseIds?.length === 1 ? rel.spouseIds[0] : null;
-					if (spouseId) {
-						await api
-							.addRelationship({
-								sourcePersonId: spouseId,
-								targetPersonId: created.id,
-								relationshipType: 'PARENT',
-							})
-							.catch(() => {}); // non-fatal if already linked
+			} else if (targRelationType === 'parent') {
+				relations.push({
+					targetPersonId: targRelativeId,
+					relationshipType: 'PARENT',
+				});
+			} else if (targRelationType === 'spouse') {
+				relations.push({
+					targetPersonId: targRelativeId,
+					relationshipType: 'SPOUSE',
+				});
+				if (adoptChildren) {
+					for (const childId of selectedRelative.childrenIds ?? []) {
+						relations.push({
+							targetPersonId: childId,
+							relationshipType: 'PARENT',
+						});
 					}
 				}
 			}
 
-			dispatch({
-				type: 'PUSH_UNDO',
-				entry: {
-					label: `Add ${targRelationType} ${created.firstName}`,
-					action: async () => {
-						await api.deletePerson(created.id);
-						await refreshTree();
-					},
+			const { person: created } = await api.createPersonWithRelations({
+				person: {
+					firstName: fin,
+					lastName: lastName.trim() || undefined,
+					gender,
+					isDeceased,
 				},
+				relations,
 			});
 
-			dispatch({ type: 'CLOSE_ADD_PERSON_MODAL' });
-			dispatch({ type: 'TREE_MUTATED' });
-			await refreshTree();
+			afterSave(
+				created.firstName,
+				async () => {
+					await api.deletePerson(created.id);
+					await refreshTree();
+				},
+				`Add ${targRelationType} ${created.firstName}`,
+			);
 		} catch (err) {
 			setError(err instanceof Error ? err.message : 'Failed to add person');
+		} finally {
+			setSaving(false);
+		}
+	}
+
+	/** Link an EXISTING person in ONE request */
+	async function handleLinkSave(personId: string) {
+		if (!personId || !targRelativeId || !selectedRelative) return;
+		const existing = state.people[personId];
+		setSaving(true);
+		setError('');
+
+		try {
+			const rows: api.BatchRelationshipInput[] = [];
+
+			if (targRelationType === 'sibling') {
+				if (selectedRelative.parentIds.length === 0) {
+					throw new Error(
+						'Cannot add sibling — this person has no parents yet.',
+					);
+				}
+				for (const parentId of selectedRelative.parentIds) {
+					rows.push({
+						sourcePersonId: parentId,
+						targetPersonId: personId,
+						relationshipType: 'PARENT',
+					});
+				}
+			} else if (targRelationType === 'child') {
+				rows.push({
+					sourcePersonId: targRelativeId,
+					targetPersonId: personId,
+					relationshipType: 'PARENT',
+				});
+				if (autoLinkSpouse && autoSecondParent) {
+					rows.push({
+						sourcePersonId: autoSecondParent.id,
+						targetPersonId: personId,
+						relationshipType: 'PARENT',
+					});
+				}
+			} else if (targRelationType === 'parent') {
+				rows.push({
+					sourcePersonId: personId,
+					targetPersonId: targRelativeId,
+					relationshipType: 'PARENT',
+				});
+			} else if (targRelationType === 'spouse') {
+				rows.push({
+					sourcePersonId: targRelativeId,
+					targetPersonId: personId,
+					relationshipType: 'SPOUSE',
+				});
+				if (adoptChildren) {
+					for (const childId of selectedRelative.childrenIds ?? []) {
+						rows.push({
+							sourcePersonId: personId,
+							targetPersonId: childId,
+							relationshipType: 'PARENT',
+						});
+					}
+				}
+			}
+
+			const { relationships } = await api.addRelationshipsBatch(rows);
+
+			afterSave(
+				existing ? existing.firstName : 'Person',
+				async () => {
+					for (const rel of relationships) {
+						await api.removeRelationship(rel.id).catch(() => {});
+					}
+					await refreshTree();
+				},
+				`Link ${targRelationType} ${existing?.firstName ?? ''}`.trim(),
+			);
+		} catch (err) {
+			setError(err instanceof Error ? err.message : 'Failed to link person');
 		} finally {
 			setSaving(false);
 		}
@@ -290,6 +554,9 @@ export function AddPersonModal() {
 				(relative?.firstName ?? '').toUpperCase(),
 			)
 		: 'Add Relative';
+
+	const inputClass =
+		'w-full rounded-xl border border-transparent bg-stone-50 px-4 py-3 text-stone-800 transition-colors focus:border-emerald-500 focus:bg-white focus:ring-2 focus:ring-emerald-200';
 
 	return (
 		<div
@@ -305,7 +572,7 @@ export function AddPersonModal() {
 
 				<div className='px-6 pb-8 pt-5'>
 					{/* Header with context chip */}
-					<div className='mb-6'>
+					<div className='mb-5'>
 						{isContextual && relative && (
 							<div className='mb-2 inline-flex items-center gap-2 rounded-full border border-stone-200 bg-stone-50 px-3 py-1 text-xs font-medium text-stone-600 uppercase'>
 								<img
@@ -325,7 +592,7 @@ export function AddPersonModal() {
 							<>
 								<div>
 									<label className='mb-1.5 block text-sm font-semibold text-stone-700'>
-										Relative To
+										Related To
 									</label>
 									<PersonCombobox
 										people={Object.values(state.people)}
@@ -335,91 +602,220 @@ export function AddPersonModal() {
 								</div>
 								<div>
 									<label className='mb-1.5 block text-sm font-semibold text-stone-700'>
-										Relationship
+										{selectedRelative ? (
+											<>
+												They are{' '}
+												<span className='uppercase text-emerald-700'>
+													{selectedRelative.firstName}
+												</span>
+												&rsquo;s…
+											</>
+										) : (
+											'Relationship'
+										)}
 									</label>
-									<select
+									<RelationChips
 										value={relationType}
-										onChange={(e) =>
-											setRelationType(
-												e.target.value as
-													| 'parent'
-													| 'child'
-													| 'spouse'
-													| 'sibling',
-											)
-										}
-										className='w-full appearance-none rounded-xl border-transparent bg-stone-50 px-4 py-3 text-stone-800 focus:border-emerald-500 focus:bg-white focus:ring-2 focus:ring-emerald-200'
-									>
-										<option value='parent'>Parent of</option>
-										<option value='child'>Child of</option>
-										<option value='spouse'>Spouse of</option>
-										<option value='sibling' disabled={!canAddSibling}>
-											Sibling of{!canAddSibling ? ' (no parents)' : ''}
-										</option>
-									</select>
+										onChange={setRelationType}
+										siblingDisabled={!canAddSibling}
+									/>
 								</div>
 							</>
 						)}
 
-						{/* Name — 2-column layout */}
-						<div className='grid grid-cols-2 gap-3'>
+						{/* Smart one-tap suggestions */}
+						{suggestions.length > 0 && !parentSlotsFull && (
+							<div className='rounded-2xl border border-emerald-100 bg-emerald-50/60 p-3.5'>
+								<p className='mb-2 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-widest text-emerald-700'>
+									<Sparkles size={13} />
+									Quick link
+								</p>
+								<div className='space-y-1.5'>
+									{suggestions.map(({ person, reason }) => (
+										<button
+											key={person.id}
+											type='button'
+											disabled={saving}
+											onClick={() => handleLinkSave(person.id)}
+											className='flex w-full items-center gap-2.5 rounded-xl bg-white px-3 py-2 text-left ring-1 ring-emerald-100 transition-all hover:ring-emerald-300 hover:shadow-sm active:scale-[0.99] disabled:opacity-50'
+										>
+											<PersonInitial person={person} />
+											<span className='min-w-0 flex-1'>
+												<span className='block truncate text-sm font-semibold text-stone-800 uppercase'>
+													{getPersonFullName(person)}
+												</span>
+												<span className='block truncate text-xs text-stone-500'>
+													{reason}
+												</span>
+											</span>
+											<span className='flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-white'>
+												<Plus size={13} strokeWidth={3} />
+											</span>
+										</button>
+									))}
+								</div>
+							</div>
+						)}
+
+						{/* Parent slots already full */}
+						{parentSlotsFull && (
+							<div className='rounded-xl border border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-800'>
+								{(selectedRelative?.firstName ?? 'This person').toUpperCase()}{' '}
+								already has two parents linked.
+							</div>
+						)}
+
+						{/* Mode toggle: create new vs link existing */}
+						{!parentSlotsFull && (
+							<div className='flex rounded-xl bg-stone-100 p-1 text-sm font-semibold'>
+								<button
+									type='button'
+									onClick={() => setMode('create')}
+									className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg py-2 transition-all ${
+										mode === 'create'
+											? 'bg-white text-stone-800 shadow-sm'
+											: 'text-stone-400 hover:text-stone-600'
+									}`}
+								>
+									<UserPlus size={14} />
+									New person
+								</button>
+								<button
+									type='button'
+									onClick={() => setMode('link')}
+									className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg py-2 transition-all ${
+										mode === 'link'
+											? 'bg-white text-stone-800 shadow-sm'
+											: 'text-stone-400 hover:text-stone-600'
+									}`}
+								>
+									<Link2 size={14} />
+									Link existing
+								</button>
+							</div>
+						)}
+
+						{/* ---- LINK EXISTING mode ---- */}
+						{mode === 'link' && !parentSlotsFull && (
 							<div>
 								<label className='mb-1.5 block text-sm font-semibold text-stone-700'>
-									Name
+									Who is the {targRelationType}?
 								</label>
-								<input
-									ref={firstNameRef}
-									type='text'
-									value={firstName}
-									onChange={(e) => setFirstName(e.target.value)}
-									onKeyDown={(e) =>
-										e.key === 'Enter' && canSubmit && handleSave()
-									}
-									placeholder='Name'
-									className='w-full rounded-xl border border-transparent bg-stone-50 px-4 py-3 text-stone-800 transition-colors focus:border-emerald-500 focus:bg-white focus:ring-2 focus:ring-emerald-200'
+								<PersonCombobox
+									people={linkCandidates}
+									value={existingPersonId}
+									onChange={setExistingPersonId}
+									placeholder='Search existing people…'
 								/>
 							</div>
-							<div>
-								<label className='mb-1.5 block text-sm font-semibold text-stone-700'>
-									Nickname
-								</label>
-								<input
-									type='text'
-									value={lastName}
-									onChange={(e) => setLastName(e.target.value)}
-									placeholder='Nickname'
-									className='w-full rounded-xl border border-transparent bg-stone-50 px-4 py-3 text-stone-800 transition-colors focus:border-emerald-500 focus:bg-white focus:ring-2 focus:ring-emerald-200'
-								/>
-							</div>
-						</div>
+						)}
 
-						{/* Gender — visual toggle (not a select dropdown) */}
-						<div>
-							<label className='mb-1.5 block text-sm font-semibold text-stone-700'>
-								Gender
-							</label>
-							<GenderPicker value={gender} onChange={setGender} />
-						</div>
+						{/* ---- NEW PERSON mode ---- */}
+						{mode === 'create' && !parentSlotsFull && (
+							<>
+								{/* Name — 2-column layout */}
+								<div className='grid grid-cols-2 gap-3'>
+									<div>
+										<label className='mb-1.5 block text-sm font-semibold text-stone-700'>
+											Name
+										</label>
+										<input
+											ref={firstNameRef}
+											type='text'
+											value={firstName}
+											onChange={(e) => setFirstName(e.target.value)}
+											onKeyDown={(e) =>
+												e.key === 'Enter' &&
+												canSubmit &&
+												!saving &&
+												handleCreateSave()
+											}
+											placeholder='Name'
+											className={inputClass}
+										/>
+									</div>
+									<div>
+										<label className='mb-1.5 block text-sm font-semibold text-stone-700'>
+											Nickname
+										</label>
+										<input
+											type='text'
+											value={lastName}
+											onChange={(e) => setLastName(e.target.value)}
+											placeholder='Nickname'
+											className={inputClass}
+										/>
+									</div>
+								</div>
 
-						{/* Deceased checkbox */}
-						<div className='flex items-center gap-3 rounded-xl bg-stone-50 px-4 py-3'>
-							<input
-								id='modal-late'
-								type='checkbox'
-								checked={isDeceased}
-								onChange={(e) => setIsDeceased(e.target.checked)}
-								className='h-5 w-5 cursor-pointer rounded border-stone-300 text-emerald-600 focus:ring-2 focus:ring-emerald-500'
-							/>
-							<label
-								htmlFor='modal-late'
-								className='cursor-pointer text-sm font-medium text-stone-700'
-							>
-								Mark as Late / Deceased
-							</label>
-						</div>
+								{/* Duplicate guard */}
+								{similarPeople.length > 0 && (
+									<div className='rounded-2xl border border-amber-200 bg-amber-50/70 p-3.5'>
+										<p className='mb-2 text-[11px] font-bold uppercase tracking-widest text-amber-700'>
+											Similar people already exist
+										</p>
+										<div className='space-y-1.5'>
+											{similarPeople.map((p) => (
+												<div
+													key={p.id}
+													className='flex items-center gap-2.5 rounded-xl bg-white px-3 py-2 ring-1 ring-amber-100'
+												>
+													<PersonInitial person={p} />
+													<span className='min-w-0 flex-1'>
+														<span className='block truncate text-sm font-semibold text-stone-800 uppercase'>
+															{getPersonFullName(p)}
+														</span>
+														<span className='block truncate text-xs text-stone-500'>
+															{getPersonDisambiguation(
+																p,
+																peopleById,
+																duplicateNames,
+															) ?? 'No parents linked'}
+														</span>
+													</span>
+													<button
+														type='button'
+														disabled={saving}
+														onClick={() => handleLinkSave(p.id)}
+														className='shrink-0 rounded-full bg-stone-800 px-2.5 py-1 text-[11px] font-semibold text-white transition-colors hover:bg-stone-700 disabled:opacity-50'
+													>
+														Link instead
+													</button>
+												</div>
+											))}
+										</div>
+									</div>
+								)}
+
+								{/* Gender — visual toggle (not a select dropdown) */}
+								<div>
+									<label className='mb-1.5 block text-sm font-semibold text-stone-700'>
+										Gender
+									</label>
+									<GenderPicker value={gender} onChange={setGender} />
+								</div>
+
+								{/* Deceased checkbox */}
+								<div className='flex items-center gap-3 rounded-xl bg-stone-50 px-4 py-3'>
+									<input
+										id='modal-late'
+										type='checkbox'
+										checked={isDeceased}
+										onChange={(e) => setIsDeceased(e.target.checked)}
+										className='h-5 w-5 cursor-pointer rounded border-stone-300 text-emerald-600 focus:ring-2 focus:ring-emerald-500'
+									/>
+									<label
+										htmlFor='modal-late'
+										className='cursor-pointer text-sm font-medium text-stone-700'
+									>
+										Mark as Late / Deceased
+									</label>
+								</div>
+							</>
+						)}
 
 						{/* Notice when second parent will be auto-linked */}
-						{autoSecondParent && (
+						{autoSecondParent && !parentSlotsFull && (
 							<div className='flex items-center gap-3 rounded-xl bg-blue-50 px-4 py-3'>
 								<input
 									id='modal-auto-link-spouse'
@@ -432,27 +828,18 @@ export function AddPersonModal() {
 									htmlFor='modal-auto-link-spouse'
 									className='cursor-pointer text-sm font-medium text-blue-800'
 								>
-									Also link to <strong>{autoSecondParent.firstName}</strong> as
-									the other parent
+									Also link to{' '}
+									<strong className='uppercase'>
+										{autoSecondParent.firstName}
+									</strong>{' '}
+									as the other parent
 								</label>
 							</div>
 						)}
 
 						{/* Toggle to adopt existing children when adding spouse */}
-						{(() => {
-							const effRelType = isContextual
-								? addPersonModal.relationType
-								: relationType;
-							const effRelId = isContextual
-								? addPersonModal.relativePersonId
-								: relativePersonId;
-							const effRel = effRelId ? state.people[effRelId] : null;
-							if (effRelType !== 'spouse' || !effRel?.childrenIds?.length)
-								return null;
-							const childNames = effRel.childrenIds
-								.map((id) => state.people[id]?.firstName)
-								.filter(Boolean);
-							return (
+						{targRelationType === 'spouse' &&
+							(selectedRelative?.childrenIds?.length ?? 0) > 0 && (
 								<div className='flex items-center gap-3 rounded-xl bg-stone-50 px-4 py-3'>
 									<input
 										id='modal-adopt-children'
@@ -463,13 +850,43 @@ export function AddPersonModal() {
 									/>
 									<label
 										htmlFor='modal-adopt-children'
-										className='cursor-pointer text-sm font-medium text-stone-700'
+										className='cursor-pointer text-sm font-medium text-stone-700 uppercase'
 									>
-										Also add as parent of {childNames.join(', ')}
+										Also add as parent of{' '}
+										{(selectedRelative?.childrenIds ?? [])
+											.map((id) => state.people[id]?.firstName)
+											.filter(Boolean)
+											.join(', ')}
 									</label>
 								</div>
-							);
-						})()}
+							)}
+
+						{/* Save & add another (children / siblings) */}
+						{showAddAnother && !parentSlotsFull && (
+							<div className='flex items-center gap-3 rounded-xl bg-stone-50 px-4 py-3'>
+								<input
+									id='modal-add-another'
+									type='checkbox'
+									checked={addAnother}
+									onChange={(e) => setAddAnother(e.target.checked)}
+									className='h-5 w-5 cursor-pointer rounded border-stone-300 text-emerald-600 focus:ring-2 focus:ring-emerald-500'
+								/>
+								<label
+									htmlFor='modal-add-another'
+									className='cursor-pointer text-sm font-medium text-stone-700'
+								>
+									Keep open to add another {targRelationType}
+								</label>
+							</div>
+						)}
+
+						{/* Inline confirmation of rapid adds */}
+						{savedNames.length > 0 && (
+							<div className='flex items-start gap-2 rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-800'>
+								<Check size={16} className='mt-0.5 shrink-0' />
+								<span>Added: {savedNames.join(', ')}</span>
+							</div>
+						)}
 
 						{error && (
 							<div className='rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-600'>
@@ -477,19 +894,47 @@ export function AddPersonModal() {
 							</div>
 						)}
 
-						<button
-							onClick={handleSave}
-							disabled={!canSubmit || saving}
-							className='mt-2 w-full rounded-xl bg-emerald-500 py-3.5 text-[15px] font-semibold text-white shadow-sm shadow-emerald-200 transition-colors hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-50'
-						>
-							{saving ? 'Saving…' : 'Add Person'}
-						</button>
+						{/* Live preview — confirms the direction before saving */}
+						{showPreview && (
+							<div className='rounded-xl bg-stone-50 px-4 py-3 text-sm text-stone-600'>
+								<span className='font-bold text-stone-800 uppercase'>
+									{previewName}
+								</span>{' '}
+								will be {mode === 'create' ? 'added' : 'linked'} as{' '}
+								<span className='font-bold text-emerald-700 uppercase'>
+									{selectedRelative?.firstName}
+								</span>
+								&rsquo;s{' '}
+								<span className='font-bold text-emerald-700'>
+									{relationWord(targRelationType, previewGender)}
+								</span>
+								.
+							</div>
+						)}
+
+						{!parentSlotsFull && (
+							<button
+								onClick={() =>
+									mode === 'create'
+										? handleCreateSave()
+										: handleLinkSave(existingPersonId)
+								}
+								disabled={!canSubmit || saving}
+								className='mt-2 w-full rounded-xl bg-emerald-600 py-3.5 text-[15px] font-semibold text-white shadow-sm shadow-emerald-600/20 transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50'
+							>
+								{saving
+									? 'Saving…'
+									: mode === 'create'
+										? 'Add Person'
+										: 'Link Person'}
+							</button>
+						)}
 
 						<button
 							onClick={() => dispatch({ type: 'CLOSE_ADD_PERSON_MODAL' })}
 							className='w-full rounded-xl bg-stone-100 py-3.5 text-[15px] font-semibold text-stone-700 transition-colors hover:bg-stone-200'
 						>
-							Cancel
+							{savedNames.length > 0 ? 'Done' : 'Cancel'}
 						</button>
 					</div>
 				</div>
