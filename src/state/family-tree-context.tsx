@@ -222,11 +222,31 @@ interface ProviderProps {
 	initialUser: User;
 }
 
+const ADMIN_MODE_KEY = 'family-tree-admin-mode';
+
+function readStoredAdminMode(): boolean {
+	try {
+		return localStorage.getItem(ADMIN_MODE_KEY) === 'true';
+	} catch {
+		return false;
+	}
+}
+
 export function FamilyTreeProvider({ children, initialUser }: ProviderProps) {
 	const [state, dispatch] = useReducer(reducer, {
 		...initialState,
 		currentUser: initialUser,
+		isAdminMode: readStoredAdminMode(),
 	});
+
+	// Persist the admin-mode switch across reloads
+	useEffect(() => {
+		try {
+			localStorage.setItem(ADMIN_MODE_KEY, String(state.isAdminMode));
+		} catch {
+			/* ignore */
+		}
+	}, [state.isAdminMode]);
 
 	const currentUser = state.currentUser;
 	const centerPersonId = currentUser?.personId ?? '';

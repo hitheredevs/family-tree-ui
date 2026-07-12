@@ -390,6 +390,9 @@ export function TreeCanvas({ onPersonOpen }: { onPersonOpen?: () => void }) {
 						parents={overlayParents}
 						siblings={overlaySiblings}
 						kids={overlayKids}
+						canEdit={
+							state.isAdminMode && state.currentUser?.role === 'admin'
+						}
 						onAddRelation={(id, rel) =>
 							callbacksRef.current.onOpenAddPersonModal(id, rel)
 						}

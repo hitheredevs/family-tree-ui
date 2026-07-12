@@ -23,6 +23,8 @@ interface NodeOverlayProps {
 	siblings: Person[];
 	/** The person's children ("children" is reserved for JSX) */
 	kids: Person[];
+	/** Show the add-relative buttons (admin mode only) */
+	canEdit: boolean;
 	onAddRelation: (
 		personId: string,
 		relation: 'parent' | 'child' | 'spouse' | 'sibling',
@@ -65,6 +67,9 @@ const BUTTONS = [
 const ROW1_Y = 122;
 const ROW2_Y = 158;
 const POPUP_Y = 180;
+/** Half-distance between the two pills in each row */
+const ROW1_X = 52;
+const ROW2_X = 66;
 
 const navPillClass =
 	'node-overlay-btn pointer-events-auto absolute flex items-center gap-1.5 whitespace-nowrap rounded-full bg-stone-800 py-1.5 px-3 text-[11px] font-semibold text-white shadow-lg shadow-stone-900/25 transition-all hover:scale-105 hover:bg-stone-700 active:scale-95';
@@ -86,6 +91,7 @@ export function NodeOverlay({
 	parents,
 	siblings,
 	kids,
+	canEdit,
 	onAddRelation,
 	onOpenProfile,
 	onGoToPerson,
@@ -129,8 +135,9 @@ export function NodeOverlay({
 
 	return (
 		<div className='absolute pointer-events-none' style={{ left: 0, top: 0 }}>
-			{/* ── Add-relative buttons around the node ── */}
-			{BUTTONS.map((btn) => (
+			{/* ── Add-relative buttons around the node (admin mode only) ── */}
+			{canEdit &&
+				BUTTONS.map((btn) => (
 				<button
 					key={btn.relation}
 					className='node-overlay-btn pointer-events-auto absolute flex items-center gap-1.5 whitespace-nowrap rounded-full bg-white py-1 pl-1 pr-2.5 text-[11px] font-semibold text-stone-700 shadow-lg shadow-stone-900/15 ring-1 ring-stone-200/80 transition-transform hover:scale-105 active:scale-95'
@@ -156,7 +163,7 @@ export function NodeOverlay({
 			<button
 				className={navPillClass}
 				style={{
-					left: hasParents ? -48 : 0,
+					left: hasParents ? -ROW1_X : 0,
 					top: ROW1_Y,
 					transform: 'translate(-50%, -50%)',
 					animationDelay: '120ms',
@@ -171,7 +178,7 @@ export function NodeOverlay({
 				<button
 					className={navPillClass}
 					style={{
-						left: 48,
+						left: ROW1_X,
 						top: ROW1_Y,
 						transform: 'translate(-50%, -50%)',
 						animationDelay: '135ms',
@@ -190,7 +197,7 @@ export function NodeOverlay({
 				<button
 					className={`${navPillClass} ${popup === 'siblings' ? 'bg-emerald-600 hover:bg-emerald-600' : ''}`}
 					style={{
-						left: hasKids ? -52 : 0,
+						left: hasKids ? -ROW2_X : 0,
 						top: ROW2_Y,
 						transform: 'translate(-50%, -50%)',
 						animationDelay: '150ms',
@@ -209,7 +216,7 @@ export function NodeOverlay({
 				<button
 					className={`${navPillClass} ${popup === 'children' ? 'bg-emerald-600 hover:bg-emerald-600' : ''}`}
 					style={{
-						left: hasSiblings ? 52 : 0,
+						left: hasSiblings ? ROW2_X : 0,
 						top: ROW2_Y,
 						transform: 'translate(-50%, -50%)',
 						animationDelay: '165ms',
