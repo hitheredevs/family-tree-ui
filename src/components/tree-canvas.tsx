@@ -219,6 +219,13 @@ export function TreeCanvas({ onPersonOpen }: { onPersonOpen?: () => void }) {
 		return [...seen.values()];
 	}, [selectedPerson, state.people]);
 
+	const overlayKids = useMemo(() => {
+		if (!selectedPerson) return [];
+		return (selectedPerson.childrenIds ?? [])
+			.map((id) => state.people[id])
+			.filter(Boolean);
+	}, [selectedPerson, state.people]);
+
 	const goToPerson = useCallback(
 		(personId: string) => {
 			dispatch({ type: 'SELECT_PERSON', personId });
@@ -382,6 +389,7 @@ export function TreeCanvas({ onPersonOpen }: { onPersonOpen?: () => void }) {
 						personId={state.selectedPersonId}
 						parents={overlayParents}
 						siblings={overlaySiblings}
+						kids={overlayKids}
 						onAddRelation={(id, rel) =>
 							callbacksRef.current.onOpenAddPersonModal(id, rel)
 						}

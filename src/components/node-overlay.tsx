@@ -3,14 +3,16 @@
  *
  * Two clusters:
  *  - Colorful "+" buttons around the node (Add Parent / Spouse / Child / Sibling)
- *  - Dark navigation pills below (View profile, Go to parents, Siblings popup)
+ *  - Dark navigation pills below:
+ *      row 1: Profile | Parents
+ *      row 2: Siblings | Children   (each opens a jump-to popup)
  *
  * Only 0–1 instance ever exists in the DOM; its wrapper is positioned
  * imperatively by TreeCanvas.
  */
 
 import { useState } from 'react';
-import { Plus, User, ArrowUp, Users } from 'lucide-react';
+import { Plus, User, ArrowUp, Users, Baby } from 'lucide-react';
 import type { Person } from '../types';
 import { useLanguage } from '../state/language-context';
 import { toUrdu } from '../utils/transliterate';
@@ -19,6 +21,8 @@ interface NodeOverlayProps {
 	personId: string;
 	parents: Person[];
 	siblings: Person[];
+	/** The person's children ("children" is reserved for JSX) */
+	kids: Person[];
 	onAddRelation: (
 		personId: string,
 		relation: 'parent' | 'child' | 'spouse' | 'sibling',
@@ -58,22 +62,40 @@ const BUTTONS = [
 	},
 ];
 
+const ROW1_Y = 122;
+const ROW2_Y = 158;
+const POPUP_Y = 180;
+
 const navPillClass =
 	'node-overlay-btn pointer-events-auto absolute flex items-center gap-1.5 whitespace-nowrap rounded-full bg-stone-800 py-1.5 px-3 text-[11px] font-semibold text-white shadow-lg shadow-stone-900/25 transition-all hover:scale-105 hover:bg-stone-700 active:scale-95';
+
+function CountBadge({ n, active }: { n: number; active: boolean }) {
+	return (
+		<span
+			className={`ml-0.5 rounded-full px-1 text-[9px] font-bold ${
+				active ? 'bg-white/25 text-white' : 'bg-stone-600 text-stone-200'
+			}`}
+		>
+			{n}
+		</span>
+	);
+}
 
 export function NodeOverlay({
 	personId,
 	parents,
 	siblings,
+	kids,
 	onAddRelation,
 	onOpenProfile,
 	onGoToPerson,
 }: NodeOverlayProps) {
-	const [showSiblings, setShowSiblings] = useState(false);
+	const [popup, setPopup] = useState<'siblings' | 'children' | null>(null);
 	const { isUrdu } = useLanguage();
 
 	const hasParents = parents.length > 0;
 	const hasSiblings = siblings.length > 0;
+	const hasKids = kids.length > 0;
 
 	const displayName = (p: Person) => {
 		const name = `${p.firstName} ${p.lastName || ''}`.trim();
@@ -103,6 +125,8 @@ export function NodeOverlay({
 		},
 	});
 
+	const popupPeople = popup === 'siblings' ? siblings : kids;
+
 	return (
 		<div className='absolute pointer-events-none' style={{ left: 0, top: 0 }}>
 			{/* ── Add-relative buttons around the node ── */}
@@ -127,32 +151,30 @@ export function NodeOverlay({
 				</button>
 			))}
 
-			{/* ── Navigation cluster below the node ── */}
+			{/* ── Row 1: Profile | Parents ── */}
 
-			{/* View profile */}
 			<button
 				className={navPillClass}
 				style={{
-					left: 0,
-					top: 120,
+					left: hasParents ? -48 : 0,
+					top: ROW1_Y,
 					transform: 'translate(-50%, -50%)',
 					animationDelay: '120ms',
 				}}
 				{...press(() => onOpenProfile(personId))}
 			>
 				<User size={12} />
-				View profile
+				Profile
 			</button>
 
-			{/* Go to parents */}
 			{hasParents && (
 				<button
 					className={navPillClass}
 					style={{
-						left: hasSiblings ? -56 : 0,
-						top: 156,
+						left: 48,
+						top: ROW1_Y,
 						transform: 'translate(-50%, -50%)',
-						animationDelay: '150ms',
+						animationDelay: '135ms',
 					}}
 					{...press(() => onGoToPerson(parents[0].id))}
 					title={parents.map((p) => p.firstName).join(' & ')}
@@ -162,47 +184,61 @@ export function NodeOverlay({
 				</button>
 			)}
 
-			{/* Siblings toggle */}
+			{/* ── Row 2: Siblings | Children ── */}
+
 			{hasSiblings && (
 				<button
-					className={`${navPillClass} ${showSiblings ? 'bg-emerald-600 hover:bg-emerald-600' : ''}`}
+					className={`${navPillClass} ${popup === 'siblings' ? 'bg-emerald-600 hover:bg-emerald-600' : ''}`}
 					style={{
-						left: hasParents ? 56 : 0,
-						top: 156,
+						left: hasKids ? -52 : 0,
+						top: ROW2_Y,
 						transform: 'translate(-50%, -50%)',
 						animationDelay: '150ms',
 					}}
-					{...press(() => setShowSiblings((v) => !v))}
+					{...press(() =>
+						setPopup((v) => (v === 'siblings' ? null : 'siblings')),
+					)}
 				>
 					<Users size={12} />
 					Siblings
-					<span
-						className={`ml-0.5 rounded-full px-1 text-[9px] font-bold ${
-							showSiblings
-								? 'bg-white/25 text-white'
-								: 'bg-stone-600 text-stone-200'
-						}`}
-					>
-						{siblings.length}
-					</span>
+					<CountBadge n={siblings.length} active={popup === 'siblings'} />
 				</button>
 			)}
 
-			{/* Siblings popup */}
-			{showSiblings && hasSiblings && (
+			{hasKids && (
+				<button
+					className={`${navPillClass} ${popup === 'children' ? 'bg-emerald-600 hover:bg-emerald-600' : ''}`}
+					style={{
+						left: hasSiblings ? 52 : 0,
+						top: ROW2_Y,
+						transform: 'translate(-50%, -50%)',
+						animationDelay: '165ms',
+					}}
+					{...press(() =>
+						setPopup((v) => (v === 'children' ? null : 'children')),
+					)}
+				>
+					<Baby size={12} />
+					Children
+					<CountBadge n={kids.length} active={popup === 'children'} />
+				</button>
+			)}
+
+			{/* ── Jump-to popup (siblings or children) ── */}
+			{popup && popupPeople.length > 0 && (
 				<div
 					className='node-overlay-btn pointer-events-auto absolute w-52 overflow-hidden rounded-2xl bg-white shadow-xl shadow-stone-900/20 ring-1 ring-stone-200/80'
 					style={{
 						left: 0,
-						top: 176,
+						top: POPUP_Y,
 						transform: 'translate(-50%, 0)',
 					}}
 				>
 					<div className='px-3.5 pb-1 pt-2.5 text-[10px] font-bold uppercase tracking-widest text-stone-400'>
-						Go to sibling
+						{popup === 'siblings' ? 'Go to sibling' : 'Go to child'}
 					</div>
 					<div className='max-h-44 overflow-y-auto pb-1.5'>
-						{siblings.map((s) => (
+						{popupPeople.map((s) => (
 							<button
 								key={s.id}
 								className='flex w-full items-center gap-2.5 px-3 py-1.5 text-left transition-colors hover:bg-emerald-50/70'
