@@ -192,6 +192,41 @@ export function TreeCanvas({ onPersonOpen }: { onPersonOpen?: () => void }) {
 		setSearchQuery('');
 	}
 
+	/* ---- family of the selected person (for overlay navigation) ---- */
+
+	const selectedPerson = state.selectedPersonId
+		? (state.people[state.selectedPersonId] ?? null)
+		: null;
+
+	const overlayParents = useMemo(() => {
+		if (!selectedPerson) return [];
+		return (selectedPerson.parentIds ?? [])
+			.map((id) => state.people[id])
+			.filter(Boolean);
+	}, [selectedPerson, state.people]);
+
+	const overlaySiblings = useMemo(() => {
+		if (!selectedPerson) return [];
+		const seen = new Map<string, (typeof state.people)[string]>();
+		for (const parentId of selectedPerson.parentIds ?? []) {
+			const parent = state.people[parentId];
+			for (const childId of parent?.childrenIds ?? []) {
+				if (childId === selectedPerson.id || seen.has(childId)) continue;
+				const child = state.people[childId];
+				if (child) seen.set(childId, child);
+			}
+		}
+		return [...seen.values()];
+	}, [selectedPerson, state.people]);
+
+	const goToPerson = useCallback(
+		(personId: string) => {
+			dispatch({ type: 'SELECT_PERSON', personId });
+			rendererRef.current?.jumpToNode(personId);
+		},
+		[dispatch],
+	);
+
 	/* ---- render ---- */
 
 	return (
@@ -343,11 +378,15 @@ export function TreeCanvas({ onPersonOpen }: { onPersonOpen?: () => void }) {
 			>
 				{overlayVisible && state.selectedPersonId && (
 					<NodeOverlay
+						key={state.selectedPersonId}
 						personId={state.selectedPersonId}
+						parents={overlayParents}
+						siblings={overlaySiblings}
 						onAddRelation={(id, rel) =>
 							callbacksRef.current.onOpenAddPersonModal(id, rel)
 						}
 						onOpenProfile={(id) => callbacksRef.current.onPersonOpen(id)}
+						onGoToPerson={goToPerson}
 					/>
 				)}
 			</div>

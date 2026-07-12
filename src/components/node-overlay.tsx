@@ -1,19 +1,30 @@
 /**
  * HTML overlay anchored to a selected canvas node.
- * Shows spatial action buttons (Add Parent / Spouse / Child / Sibling)
- * plus a "View profile" shortcut. Only 0–1 instance ever exists in the
- * DOM; its wrapper is positioned imperatively by TreeCanvas.
+ *
+ * Two clusters:
+ *  - Colorful "+" buttons around the node (Add Parent / Spouse / Child / Sibling)
+ *  - Dark navigation pills below (View profile, Go to parents, Siblings popup)
+ *
+ * Only 0–1 instance ever exists in the DOM; its wrapper is positioned
+ * imperatively by TreeCanvas.
  */
 
-import { Plus, User } from 'lucide-react';
+import { useState } from 'react';
+import { Plus, User, ArrowUp, Users } from 'lucide-react';
+import type { Person } from '../types';
+import { useLanguage } from '../state/language-context';
+import { toUrdu } from '../utils/transliterate';
 
 interface NodeOverlayProps {
 	personId: string;
+	parents: Person[];
+	siblings: Person[];
 	onAddRelation: (
 		personId: string,
 		relation: 'parent' | 'child' | 'spouse' | 'sibling',
 	) => void;
 	onOpenProfile: (personId: string) => void;
+	onGoToPerson: (personId: string) => void;
 }
 
 const BUTTONS = [
@@ -47,13 +58,54 @@ const BUTTONS = [
 	},
 ];
 
+const navPillClass =
+	'node-overlay-btn pointer-events-auto absolute flex items-center gap-1.5 whitespace-nowrap rounded-full bg-stone-800 py-1.5 px-3 text-[11px] font-semibold text-white shadow-lg shadow-stone-900/25 transition-all hover:scale-105 hover:bg-stone-700 active:scale-95';
+
 export function NodeOverlay({
 	personId,
+	parents,
+	siblings,
 	onAddRelation,
 	onOpenProfile,
+	onGoToPerson,
 }: NodeOverlayProps) {
+	const [showSiblings, setShowSiblings] = useState(false);
+	const { isUrdu } = useLanguage();
+
+	const hasParents = parents.length > 0;
+	const hasSiblings = siblings.length > 0;
+
+	const displayName = (p: Person) => {
+		const name = `${p.firstName} ${p.lastName || ''}`.trim();
+		if (!isUrdu) return name;
+		return (
+			<span
+				style={{
+					fontFamily: "'Noto Nastaliq Urdu', serif",
+					direction: 'rtl' as const,
+				}}
+			>
+				{toUrdu(name)}
+			</span>
+		);
+	};
+
+	/* Tap handler that works for both mouse and touch */
+	const press = (fn: () => void) => ({
+		onClick: (e: React.MouseEvent) => {
+			e.stopPropagation();
+			fn();
+		},
+		onTouchEnd: (e: React.TouchEvent) => {
+			e.stopPropagation();
+			e.preventDefault();
+			fn();
+		},
+	});
+
 	return (
 		<div className='absolute pointer-events-none' style={{ left: 0, top: 0 }}>
+			{/* ── Add-relative buttons around the node ── */}
 			{BUTTONS.map((btn) => (
 				<button
 					key={btn.relation}
@@ -64,15 +116,7 @@ export function NodeOverlay({
 						transform: 'translate(-50%, -50%)',
 						animationDelay: btn.delay,
 					}}
-					onClick={(e) => {
-						e.stopPropagation();
-						onAddRelation(personId, btn.relation);
-					}}
-					onTouchEnd={(e) => {
-						e.stopPropagation();
-						e.preventDefault();
-						onAddRelation(personId, btn.relation);
-					}}
+					{...press(() => onAddRelation(personId, btn.relation))}
 				>
 					<span
 						className={`flex h-5 w-5 items-center justify-center rounded-full text-white ${btn.chip}`}
@@ -83,28 +127,104 @@ export function NodeOverlay({
 				</button>
 			))}
 
-			{/* View profile shortcut below the node */}
+			{/* ── Navigation cluster below the node ── */}
+
+			{/* View profile */}
 			<button
-				className='node-overlay-btn pointer-events-auto absolute flex items-center gap-1.5 whitespace-nowrap rounded-full bg-stone-800 py-1.5 px-3 text-[11px] font-semibold text-white shadow-lg shadow-stone-900/25 transition-transform hover:scale-105 hover:bg-stone-700 active:scale-95'
+				className={navPillClass}
 				style={{
 					left: 0,
 					top: 120,
 					transform: 'translate(-50%, -50%)',
 					animationDelay: '120ms',
 				}}
-				onClick={(e) => {
-					e.stopPropagation();
-					onOpenProfile(personId);
-				}}
-				onTouchEnd={(e) => {
-					e.stopPropagation();
-					e.preventDefault();
-					onOpenProfile(personId);
-				}}
+				{...press(() => onOpenProfile(personId))}
 			>
 				<User size={12} />
 				View profile
 			</button>
+
+			{/* Go to parents */}
+			{hasParents && (
+				<button
+					className={navPillClass}
+					style={{
+						left: hasSiblings ? -56 : 0,
+						top: 156,
+						transform: 'translate(-50%, -50%)',
+						animationDelay: '150ms',
+					}}
+					{...press(() => onGoToPerson(parents[0].id))}
+					title={parents.map((p) => p.firstName).join(' & ')}
+				>
+					<ArrowUp size={12} />
+					Parents
+				</button>
+			)}
+
+			{/* Siblings toggle */}
+			{hasSiblings && (
+				<button
+					className={`${navPillClass} ${showSiblings ? 'bg-emerald-600 hover:bg-emerald-600' : ''}`}
+					style={{
+						left: hasParents ? 56 : 0,
+						top: 156,
+						transform: 'translate(-50%, -50%)',
+						animationDelay: '150ms',
+					}}
+					{...press(() => setShowSiblings((v) => !v))}
+				>
+					<Users size={12} />
+					Siblings
+					<span
+						className={`ml-0.5 rounded-full px-1 text-[9px] font-bold ${
+							showSiblings
+								? 'bg-white/25 text-white'
+								: 'bg-stone-600 text-stone-200'
+						}`}
+					>
+						{siblings.length}
+					</span>
+				</button>
+			)}
+
+			{/* Siblings popup */}
+			{showSiblings && hasSiblings && (
+				<div
+					className='node-overlay-btn pointer-events-auto absolute w-52 overflow-hidden rounded-2xl bg-white shadow-xl shadow-stone-900/20 ring-1 ring-stone-200/80'
+					style={{
+						left: 0,
+						top: 176,
+						transform: 'translate(-50%, 0)',
+					}}
+				>
+					<div className='px-3.5 pb-1 pt-2.5 text-[10px] font-bold uppercase tracking-widest text-stone-400'>
+						Go to sibling
+					</div>
+					<div className='max-h-44 overflow-y-auto pb-1.5'>
+						{siblings.map((s) => (
+							<button
+								key={s.id}
+								className='flex w-full items-center gap-2.5 px-3 py-1.5 text-left transition-colors hover:bg-emerald-50/70'
+								{...press(() => onGoToPerson(s.id))}
+							>
+								<span
+									className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white bg-gradient-to-b ${
+										s.gender === 'female'
+											? 'from-pink-300 to-pink-500'
+											: 'from-blue-300 to-blue-500'
+									} ${s.isDeceased ? 'grayscale' : ''}`}
+								>
+									{(s.firstName?.[0] ?? '?').toUpperCase()}
+								</span>
+								<span className='truncate text-xs font-semibold text-stone-700'>
+									{displayName(s)}
+								</span>
+							</button>
+						))}
+					</div>
+				</div>
+			)}
 		</div>
 	);
 }
