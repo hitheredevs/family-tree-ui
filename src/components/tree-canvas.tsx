@@ -35,10 +35,12 @@ const LINEAGE_KEY = 'family-tree-lineage-only';
 function computeLineageSet(
 	people: Record<string, Person>,
 	centerId: string,
-): Set<string> {
-	const set = new Set<string>();
+): Set<string> | null {
 	const center = people[centerId];
-	if (!center) return set;
+	/* People map not loaded yet (or user not in it) — do not filter,
+	 * otherwise the canvas would render nothing. */
+	if (!center) return null;
+	const set = new Set<string>();
 	set.add(centerId);
 
 	/* Direct ancestors, all the way up */
@@ -93,8 +95,11 @@ export function TreeCanvas({ onPersonOpen }: { onPersonOpen?: () => void }) {
 	const searchInputRef = useRef<HTMLInputElement>(null);
 	const { isUrdu } = useLanguage();
 
-	/* ---- stats badge ---- */
+	/* ---- stats badge + load status ---- */
 	const [stats, setStats] = useState<{ totalPeople: number } | null>(null);
+	const [loadStatus, setLoadStatus] = useState<
+		'loading' | 'ready' | 'error'
+	>('loading');
 
 	/* ---- "My line" (direct lineage) switch, persisted ---- */
 	const [lineageOnly, setLineageOnly] = useState(() => {
@@ -207,6 +212,7 @@ export function TreeCanvas({ onPersonOpen }: { onPersonOpen?: () => void }) {
 					callbacksRef.current.onOpenAddPersonModal(id, rel),
 				onViewChange: () => syncOverlay(),
 				onStats: (s) => setStats({ totalPeople: s.totalPeople }),
+				onLoadStatus: (s) => setLoadStatus(s),
 			},
 			centerPersonId,
 		);
@@ -318,10 +324,15 @@ export function TreeCanvas({ onPersonOpen }: { onPersonOpen?: () => void }) {
 
 	const goToPerson = useCallback(
 		(personId: string) => {
+			// Navigating to someone hidden by "My Line" would land on empty
+			// space — switch the filter off first.
+			if (lineageSet && !lineageSet.has(personId)) {
+				setLineageOnly(false);
+			}
 			dispatch({ type: 'SELECT_PERSON', personId });
 			rendererRef.current?.jumpToNode(personId);
 		},
-		[dispatch],
+		[dispatch, lineageSet],
 	);
 
 	/* ---- render ---- */
@@ -479,6 +490,30 @@ export function TreeCanvas({ onPersonOpen }: { onPersonOpen?: () => void }) {
 				<div className='absolute bottom-6 left-4 z-10 flex items-center gap-1.5 rounded-full bg-white/90 px-3 py-1.5 text-xs font-medium text-stone-500 shadow-md shadow-stone-900/5 ring-1 ring-stone-200/70 backdrop-blur-sm'>
 					<Users size={13} className='text-emerald-500' />
 					{stats.totalPeople} family members
+				</div>
+			)}
+
+			{/* ── Load status: spinner while fetching, retry chip on failure ── */}
+			{loadStatus === 'loading' && (
+				<div className='absolute left-1/2 top-16 z-10 flex -translate-x-1/2 items-center gap-2 rounded-full bg-white/95 px-4 py-2 text-xs font-medium text-stone-500 shadow-md shadow-stone-900/5 ring-1 ring-stone-200/70 backdrop-blur-sm'>
+					<span className='inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-emerald-500 border-t-transparent' />
+					Loading family tree…
+				</div>
+			)}
+			{loadStatus === 'error' && (
+				<div className='absolute left-1/2 top-16 z-10 flex -translate-x-1/2 items-center gap-2.5 rounded-full bg-white/95 px-4 py-2 text-xs font-medium text-stone-600 shadow-md shadow-stone-900/5 ring-1 ring-red-200 backdrop-blur-sm'>
+					<span className='h-2 w-2 rounded-full bg-red-400' />
+					Couldn&rsquo;t load the tree
+					<button
+						onClick={(e) => {
+							e.stopPropagation();
+							setLoadStatus('loading');
+							rendererRef.current?.invalidate();
+						}}
+						className='rounded-full bg-emerald-600 px-3 py-1 font-semibold text-white transition-colors hover:bg-emerald-700'
+					>
+						Retry
+					</button>
 				</div>
 			)}
 

@@ -143,12 +143,15 @@ interface BracketGeom {
 /*  The Renderer                                                       */
 /* ------------------------------------------------------------------ */
 
+export type LoadStatus = 'loading' | 'ready' | 'error';
+
 export interface RendererCallbacks {
     onPersonSelect: (personId: string | null) => void;
     onPersonOpen: (personId: string) => void;
     onOpenAddPersonModal: (personId: string, relation: 'parent' | 'child' | 'spouse' | 'sibling') => void;
     onViewChange?: () => void;
     onStats?: (stats: { totalPeople: number; loadedNodes: number }) => void;
+    onLoadStatus?: (status: LoadStatus) => void;
 }
 
 export class CanvasTreeRenderer {
@@ -234,6 +237,7 @@ export class CanvasTreeRenderer {
     /* Cleanup */
     private destroyed = false;
     private abortController: AbortController | null = null;
+    private resizeObserver: ResizeObserver | null = null;
 
     /* ------------------------------------------------------------------ */
     /*  Constructor                                                        */
@@ -272,6 +276,17 @@ export class CanvasTreeRenderer {
         this.canvas.addEventListener('touchend', this.handleTouchEnd, { passive: false });
         window.addEventListener('resize', this.handleResize);
 
+        /* Track container size directly — catches the tab being hidden
+         * (display:none) during a window resize and shown again, which
+         * the window resize handler alone would miss (blank canvas). */
+        if (typeof ResizeObserver !== 'undefined') {
+            this.resizeObserver = new ResizeObserver(() => {
+                this.resize();
+                this.scheduleIfNeeded();
+            });
+            this.resizeObserver.observe(container);
+        }
+
         /* First paint + initial fetch */
         this.markDirty();
         this.initialLoad();
@@ -296,6 +311,7 @@ export class CanvasTreeRenderer {
         this.canvas.removeEventListener('touchmove', this.handleTouchMove);
         this.canvas.removeEventListener('touchend', this.handleTouchEnd);
         window.removeEventListener('resize', this.handleResize);
+        this.resizeObserver?.disconnect();
 
         this.canvas.parentElement?.removeChild(this.canvas);
     }
@@ -499,6 +515,9 @@ export class CanvasTreeRenderer {
         const parent = this.canvas.parentElement;
         if (!parent) return;
         const { width, height } = parent.getBoundingClientRect();
+        /* Ignore zero sizes (tab hidden via display:none) — keep the
+         * last real backing buffer so the canvas isn't blanked. */
+        if (width < 2 || height < 2) return;
         this.canvas.width = width * this.dpr;
         this.canvas.height = height * this.dpr;
         this.markDirty();
@@ -578,8 +597,12 @@ export class CanvasTreeRenderer {
 
     /** Load edges and nodes in parallel on mount */
     private async initialLoad() {
+        this.callbacks.onLoadStatus?.('loading');
+
+        let edgesFailed = false;
         const edgesPromise = getAllEdges().catch((err) => {
             console.error('Failed to load edges', err);
+            edgesFailed = true;
             return [] as ViewportEdge[];
         });
         const viewportPromise = this.fetchViewport();
@@ -591,7 +614,8 @@ export class CanvasTreeRenderer {
             this.geometryDirty = true;
             this.markDirty();
         }
-        await viewportPromise;
+        const viewportOk = await viewportPromise;
+        if (this.destroyed) return;
 
         /* First visit (no saved view): land on the user's own node */
         if (!this.hadSavedView && this.allNodes.length > 0) {
@@ -602,17 +626,24 @@ export class CanvasTreeRenderer {
                 this.fitToTree();
             }
         }
+
+        if (edgesFailed || !viewportOk) {
+            this.callbacks.onLoadStatus?.('error');
+        } else {
+            this.callbacks.onLoadStatus?.('ready');
+        }
     }
 
     private seedAttempted = false;
 
-    private async fetchViewport() {
-        if (this.destroyed) return;
+    private async fetchViewport(): Promise<boolean> {
+        if (this.destroyed) return true;
         if (this.fetching) {
             this.refetchQueued = true;
-            return;
+            return true;
         }
         this.fetching = true;
+        let succeeded = false;
 
         /* Full fetch (initial or after invalidate): grab everything and
          * REPLACE local data; subsequent fetches merge viewport + margin. */
@@ -685,8 +716,11 @@ export class CanvasTreeRenderer {
 
             this.geometryDirty = true;
             this.markDirty();
+            succeeded = true;
         } catch (err) {
-            if ((err as Error).name !== 'AbortError') {
+            if ((err as Error).name === 'AbortError') {
+                succeeded = true; // superseded by a newer fetch, not a failure
+            } else {
                 console.error('Viewport fetch failed', err);
             }
         } finally {
@@ -696,6 +730,7 @@ export class CanvasTreeRenderer {
                 void this.fetchViewport();
             }
         }
+        return succeeded;
     }
 
     /* ------------------------------------------------------------------ */
