@@ -668,21 +668,21 @@ export class CanvasTreeRenderer {
                 zoom: this.zoom,
             });
 
-            if (this.destroyed) return;
+            if (this.destroyed) return true;
 
             /* Auto-seed: people exist but no layout positions yet */
             if (!this.seedAttempted && result.totalPeople > 0 && result.totalNodes === 0 && this.centerId) {
                 this.seedAttempted = true;
                 console.log('No layout positions found — running initial recompute…');
                 await recomputeLayout(this.centerId);
-                if (this.destroyed) return;
+                if (this.destroyed) return true;
                 /* Re-fetch edges + nodes now that positions exist */
                 this.allEdges = await getAllEdges();
                 result = await getTreeViewport({
                     minX: -1e6, maxX: 1e6, minY: -1e6, maxY: 1e6,
                     zoom: this.zoom,
                 });
-                if (this.destroyed) return;
+                if (this.destroyed) return true;
             }
 
             if (fullFetch) {
