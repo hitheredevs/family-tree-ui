@@ -75,21 +75,7 @@ export function computeTreeLayout(
     // BFS order can cause a child to land on the same gen as their parent
     // (e.g. reached via their own child's parentIds before their parent's
     // childrenIds). Iteratively push children down until consistent.
-    let changed = true;
-    while (changed) {
-        changed = false;
-        for (const [id, g] of gen) {
-            const person = people[id];
-            if (!person) continue;
-            for (const pid of person.parentIds) {
-                const pg = gen.get(pid);
-                if (pg !== undefined && pg >= g) {
-                    gen.set(id, pg + 1);
-                    changed = true;
-                }
-            }
-        }
-    }
+    enforceParentChildGenerationOrder(gen, people);
 
     // Phase 2 — spouse assignment for people only reachable via spouse edges
     const spouseQueue: string[] = [...gen.keys()];
@@ -155,6 +141,10 @@ export function computeTreeLayout(
         }
     }
 
+    // Spouse reconciliation can pull someone down onto the same row as
+    // one of their own children, so run the consistency pass again.
+    enforceParentChildGenerationOrder(gen, people);
+
     /* ---- Step 2: group by generation ---- */
 
     const rows = new Map<number, string[]>();
@@ -208,6 +198,27 @@ export function computeTreeLayout(
     }
 
     return positions;
+}
+
+function enforceParentChildGenerationOrder(
+    gen: Map<string, number>,
+    people: Record<string, Person>,
+) {
+    let changed = true;
+    while (changed) {
+        changed = false;
+        for (const [id, g] of gen) {
+            const person = people[id];
+            if (!person) continue;
+            for (const pid of person.parentIds) {
+                const pg = gen.get(pid);
+                if (pg !== undefined && pg >= g) {
+                    gen.set(id, pg + 1);
+                    changed = true;
+                }
+            }
+        }
+    }
 }
 
 /* ------------------------------------------------------------------ */
