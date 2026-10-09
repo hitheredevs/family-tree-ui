@@ -26,7 +26,7 @@ concurrency:
 jobs:
   deploy-ui:
     name: Deploy UI To VM
-    runs-on: family-tree-ui
+    runs-on: [self-hosted, family-tree-ui, aws]
     env:
       PROD_ENV: ${{ secrets.UI_PROD_ENV }}
       CERTBOT_EMAIL: ${{ secrets.CERTBOT_EMAIL }}
