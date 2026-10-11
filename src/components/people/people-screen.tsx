@@ -9,6 +9,7 @@ import {
 	buildDuplicateNameMap,
 	buildPeopleMap,
 	getPersonSearchText,
+	matchesAllWords,
 } from '../../utils/person-labels';
 import type { Person } from '../../types';
 
@@ -38,7 +39,7 @@ export function PeopleScreen({ onPersonOpen }: { onPersonOpen: () => void }) {
 				if (lifeFilter === 'living' && p.isDeceased) return false;
 				if (lifeFilter === 'late' && !p.isDeceased) return false;
 				if (!q) return true;
-				return getPersonSearchText(p, peopleById, duplicateNames).includes(q);
+				return matchesAllWords(getPersonSearchText(p, peopleById, duplicateNames), q);
 			})
 			.sort((a, b) =>
 				getPersonFullName(a).localeCompare(getPersonFullName(b)),
@@ -114,10 +115,7 @@ export function PeopleScreen({ onPersonOpen }: { onPersonOpen: () => void }) {
 						)}
 						{filtered.map((p) => {
 							const name = getPersonFullName(p);
-							const context =
-								getPersonDisambiguation(p, peopleById, duplicateNames) ??
-								p.location ??
-								'';
+							const parentLabel = getPersonDisambiguation(p, peopleById, duplicateNames);
 							return (
 								<button
 									key={p.id}
@@ -156,17 +154,16 @@ export function PeopleScreen({ onPersonOpen }: { onPersonOpen: () => void }) {
 												</span>
 											)}
 										</span>
-										{context && (
-											<span className='mt-0.5 flex items-center gap-1 truncate text-xs text-stone-400'>
-												{!getPersonDisambiguation(
-													p,
-													peopleById,
-													duplicateNames,
-												) &&
-													p.location && <MapPin size={11} />}
-												{context}
-											</span>
-										)}
+										<span className='mt-0.5 flex items-center gap-1 truncate text-xs text-stone-400'>
+											<span className='truncate'>{parentLabel}</span>
+											{p.location && (
+												<>
+													<span aria-hidden>·</span>
+													<MapPin size={11} className='shrink-0' />
+													<span className='truncate'>{p.location}</span>
+												</>
+											)}
+										</span>
 									</span>
 								</button>
 							);

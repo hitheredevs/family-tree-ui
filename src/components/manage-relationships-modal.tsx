@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useFamilyTree } from '../state/family-tree-context';
 import * as api from '../services/api-client';
 import { PersonCombobox } from './person-combobox';
+import { getParentLabel } from '../utils/person-labels';
 
 export function ManageRelationshipsModal() {
 	const { state, dispatch, refreshTree } = useFamilyTree();
@@ -186,6 +187,11 @@ export function ManageRelationshipsModal() {
 										<span className='font-semibold text-stone-800 tracking-tight uppercase'>
 											{personName(rel.target_person_id)}
 										</span>
+										{state.people[rel.target_person_id] && (
+											<span className='block text-xs text-stone-400'>
+												{getParentLabel(state.people[rel.target_person_id], state.people)}
+											</span>
+										)}
 									</div>
 									<button
 										onClick={() => handleRemoveRelationship(rel.id)}

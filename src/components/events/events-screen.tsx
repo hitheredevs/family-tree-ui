@@ -4,7 +4,7 @@ import { useFamilyTree } from '../../state/family-tree-context';
 import { useLanguage } from '../../state/language-context';
 import { toUrdu } from '../../utils/transliterate';
 import { parseMonthDay, MONTH_OPTIONS } from '../../utils/birthdate';
-import { getPersonFullName } from '../../utils/person-labels';
+import { getParentLabel, getPersonFullName } from '../../utils/person-labels';
 import type { Person } from '../../types';
 
 interface BirthdayEntry {
@@ -130,6 +130,8 @@ export function EventsScreen({ onPersonOpen }: { onPersonOpen: () => void }) {
 					<span className='block text-xs text-stone-400'>
 						{MONTH_OPTIONS[entry.month - 1]} {entry.day}
 						{entry.turns !== null && ` · turns ${entry.turns}`}
+						{' · '}
+						{getParentLabel(entry.person, state.people)}
 					</span>
 				</span>
 				<span

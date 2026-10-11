@@ -33,6 +33,7 @@ import { formatBirthday } from '../../utils/birthdate';
 import * as api from '../../services/api-client';
 import { useLanguage } from '../../state/language-context';
 import { toUrdu } from '../../utils/transliterate';
+import { getParentLabel } from '../../utils/person-labels';
 
 const SOCIAL_ICONS: Record<string, typeof Facebook> = {
 	facebook: Facebook,
@@ -76,6 +77,7 @@ function FamilyChipRow({
 	isUrdu: boolean;
 	onSelect: (id: string) => void;
 }) {
+	const { state } = useFamilyTree();
 	return (
 		<div>
 			<p className='mb-2 text-[11px] font-bold uppercase tracking-widest text-stone-400'>
@@ -99,19 +101,24 @@ function FamilyChipRow({
 							>
 								{(p.firstName?.[0] ?? '?').toUpperCase()}
 							</span>
-							<span className='text-sm font-semibold text-stone-700 uppercase'>
-								{isUrdu ? (
-									<span
-										style={{
-											fontFamily: "'Noto Nastaliq Urdu', serif",
-											direction: 'rtl' as const,
-										}}
-									>
-										{toUrdu(name)}
-									</span>
-								) : (
-									name
-								)}
+							<span className='text-left leading-tight'>
+								<span className='block text-sm font-semibold text-stone-700 uppercase'>
+									{isUrdu ? (
+										<span
+											style={{
+												fontFamily: "'Noto Nastaliq Urdu', serif",
+												direction: 'rtl' as const,
+											}}
+										>
+											{toUrdu(name)}
+										</span>
+									) : (
+										name
+									)}
+								</span>
+								<span className='block text-[10px] font-normal text-stone-400'>
+									{getParentLabel(p, state.people)}
+								</span>
 							</span>
 							<ChevronRight size={14} className='-mr-0.5 text-stone-300' />
 						</button>

@@ -11,11 +11,16 @@
  * imperatively by TreeCanvas.
  */
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Plus, User, ArrowUp, Users, Baby } from 'lucide-react';
 import type { Person } from '../types';
 import { useLanguage } from '../state/language-context';
 import { toUrdu } from '../utils/transliterate';
+import { useFamilyTree } from '../state/family-tree-context';
+import { getParentLabel } from '../utils/person-labels';
+
+/** A touch that moves further than this (px) is a scroll/drag, not a tap */
+const TAP_SLOP = 10;
 
 interface NodeOverlayProps {
 	personId: string;
@@ -118,16 +123,39 @@ export function NodeOverlay({
 		);
 	};
 
-	/* Tap handler that works for both mouse and touch */
+	const { state } = useFamilyTree();
+
+	/* Tap handler for mouse and touch. On touch it only fires if the finger
+	 * stayed put: lifting after scrolling the siblings/children list used
+	 * to open whichever person the scroll started on. */
+	const touchStart = useRef<{ x: number; y: number; moved: boolean } | null>(null);
 	const press = (fn: () => void) => ({
 		onClick: (e: React.MouseEvent) => {
 			e.stopPropagation();
 			fn();
 		},
+		onTouchStart: (e: React.TouchEvent) => {
+			const t = e.touches[0];
+			touchStart.current = { x: t.clientX, y: t.clientY, moved: false };
+		},
+		onTouchMove: (e: React.TouchEvent) => {
+			const start = touchStart.current;
+			const t = e.touches[0];
+			if (start && Math.hypot(t.clientX - start.x, t.clientY - start.y) > TAP_SLOP) {
+				start.moved = true;
+			}
+		},
 		onTouchEnd: (e: React.TouchEvent) => {
 			e.stopPropagation();
+			// Always cancel the follow-up synthetic click, so a short scroll
+			// can't still trigger onClick.
 			e.preventDefault();
-			fn();
+			const start = touchStart.current;
+			touchStart.current = null;
+			if (start && !start.moved) fn();
+		},
+		onTouchCancel: () => {
+			touchStart.current = null;
 		},
 	});
 
@@ -244,7 +272,7 @@ export function NodeOverlay({
 					<div className='px-3.5 pb-1 pt-2.5 text-[10px] font-bold uppercase tracking-widest text-stone-400'>
 						{popup === 'siblings' ? 'Go to sibling' : 'Go to child'}
 					</div>
-					<div className='max-h-44 overflow-y-auto pb-1.5'>
+					<div className='max-h-44 touch-pan-y overflow-y-auto overscroll-contain pb-1.5'>
 						{popupPeople.map((s) => (
 							<button
 								key={s.id}
@@ -260,8 +288,13 @@ export function NodeOverlay({
 								>
 									{(s.firstName?.[0] ?? '?').toUpperCase()}
 								</span>
-								<span className='truncate text-xs font-semibold text-stone-700 uppercase'>
-									{displayName(s)}
+								<span className='min-w-0'>
+									<span className='block truncate text-xs font-semibold text-stone-700 uppercase'>
+										{displayName(s)}
+									</span>
+									<span className='block truncate text-[10px] text-stone-400'>
+										{getParentLabel(s, state.people)}
+									</span>
 								</span>
 							</button>
 						))}
