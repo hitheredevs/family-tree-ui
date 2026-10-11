@@ -184,6 +184,16 @@ export function ProfilePopup() {
 									<div className='space-y-2'>
 										<p className='text-sm text-red-600 text-center'>
 											Delete {person.firstName}? This cannot be undone.
+											{(() => {
+												const links =
+													(person.parentIds?.length ?? 0) +
+													(person.childrenIds?.length ?? 0) +
+													(person.spouseIds?.length ?? 0) +
+													(person.exSpouseIds?.length ?? 0);
+												return links > 0
+													? ` Their ${links} family link${links === 1 ? '' : 's'} will be removed too. If this is a duplicate, use Merge in the Fixer tab instead.`
+													: '';
+											})()}
 										</p>
 										<div className='flex gap-2'>
 											<button

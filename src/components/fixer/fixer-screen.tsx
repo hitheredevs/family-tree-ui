@@ -33,6 +33,9 @@ export function FixerScreen({ onPersonOpen }: { onPersonOpen: () => void }) {
 	const [fixing, setFixing] = useState<string | null>(null);
 	const [fixedIds, setFixedIds] = useState<Set<string>>(new Set());
 	const [error, setError] = useState('');
+	const [notice, setNotice] = useState('');
+	// Duplicate entry the admin is choosing a "keep" target for
+	const [mergeSourceId, setMergeSourceId] = useState<string | null>(null);
 
 	const allPeople = useMemo(
 		() => Object.values(state.people),
@@ -113,6 +116,46 @@ export function FixerScreen({ onPersonOpen }: { onPersonOpen: () => void }) {
 		}
 	}
 
+	async function mergeInto(duplicate: Person, keep: Person) {
+		const dupLabel = `${getPersonFullName(duplicate)}${describe(duplicate)}`;
+		const keepLabel = `${getPersonFullName(keep)}${describe(keep)}`;
+		if (
+			!window.confirm(
+				`Merge ${dupLabel} into ${keepLabel}?\n\nOnly do this if they are the same person. Every parent, spouse and child link moves onto the one you keep, and the other entry is removed.`,
+			)
+		)
+			return;
+		setFixing(duplicate.id);
+		setError('');
+		setNotice('');
+		try {
+			const result = await api.mergePerson(duplicate.id, keep.id);
+			setNotice(
+				`Merged into ${getPersonFullName(keep).toUpperCase()}: ${result.movedLinks} link${result.movedLinks === 1 ? '' : 's'} moved${result.droppedLinks ? `, ${result.droppedLinks} already there` : ''}.`,
+			);
+			setMergeSourceId(null);
+			dispatch({ type: 'TREE_MUTATED' });
+			await refreshTree();
+		} catch (err) {
+			setError(err instanceof Error ? err.message : 'Failed to merge');
+		} finally {
+			setFixing(null);
+		}
+	}
+
+	/** Enough detail to tell same-name entries apart in labels and prompts */
+	function describe(p: Person) {
+		const d = getPersonDisambiguation(p, peopleById, duplicateNames);
+		const kids = p.childrenIds?.length ?? 0;
+		const spouses = (p.spouseIds?.length ?? 0) + (p.exSpouseIds?.length ?? 0);
+		const parts = [
+			d,
+			`${kids} ${kids === 1 ? 'child' : 'children'}`,
+			spouses ? `${spouses} spouse${spouses === 1 ? '' : 's'}` : null,
+		].filter(Boolean);
+		return ` (${parts.join(', ')})`;
+	}
+
 	if (!isAdmin) {
 		return (
 			<div className='flex h-full w-full flex-col items-center justify-center gap-3 bg-stone-50 px-8 text-center'>
@@ -163,6 +206,11 @@ export function FixerScreen({ onPersonOpen }: { onPersonOpen: () => void }) {
 					{error && (
 						<div className='rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-600'>
 							{error}
+						</div>
+					)}
+					{notice && (
+						<div className='rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-700'>
+							{notice}
 						</div>
 					)}
 
@@ -255,32 +303,62 @@ export function FixerScreen({ onPersonOpen }: { onPersonOpen: () => void }) {
 										{expanded && (
 											<div className='space-y-1.5 bg-stone-50/60 px-4 pb-3 pt-1'>
 												{group.map((p) => (
-													<button
-														key={p.id}
-														onClick={() => openPerson(p.id)}
-														className='flex w-full items-center gap-2.5 rounded-xl bg-white px-3 py-2 text-left ring-1 ring-stone-200/70 transition-all hover:ring-emerald-300'
-													>
-														<Avatar p={p} />
-														<span className='min-w-0 flex-1'>
-															<span className='block truncate text-sm font-semibold text-stone-800 uppercase'>
-																{getPersonFullName(p)}
-															</span>
-															<span className='block truncate text-xs text-stone-500'>
-																{getPersonDisambiguation(
-																	p,
-																	peopleById,
-																	duplicateNames,
-																) ?? 'No parents linked'}
-																{' · '}
-																{p.childrenIds?.length ?? 0} children
-															</span>
-														</span>
-													</button>
+													<div key={p.id} className='space-y-1'>
+														<div className='flex items-center gap-2'>
+															<button
+																onClick={() => openPerson(p.id)}
+																className='flex min-w-0 flex-1 items-center gap-2.5 rounded-xl bg-white px-3 py-2 text-left ring-1 ring-stone-200/70 transition-all hover:ring-emerald-300'
+															>
+																<Avatar p={p} />
+																<span className='min-w-0 flex-1'>
+																	<span className='block truncate text-sm font-semibold text-stone-800 uppercase'>
+																		{getPersonFullName(p)}
+																	</span>
+																	<span className='block truncate text-xs text-stone-500'>
+																		{getPersonDisambiguation(
+																			p,
+																			peopleById,
+																			duplicateNames,
+																		) ?? 'No parents linked'}
+																		{' · '}
+																		{p.childrenIds?.length ?? 0} children
+																	</span>
+																</span>
+															</button>
+															<button
+																onClick={() => setMergeSourceId(mergeSourceId === p.id ? null : p.id)}
+																disabled={fixing !== null}
+																className='shrink-0 rounded-lg px-2.5 py-2 text-xs font-semibold text-stone-500 ring-1 ring-stone-200 transition-colors hover:bg-stone-100 disabled:opacity-50'
+															>
+																{mergeSourceId === p.id ? 'Cancel' : 'Merge…'}
+															</button>
+														</div>
+														{mergeSourceId === p.id && (
+															<div className='ml-11 space-y-1 rounded-xl bg-amber-50 p-2 ring-1 ring-amber-200'>
+																<p className='px-1 text-[11px] font-medium text-amber-800'>
+																	Same person as… (pick the one to keep)
+																</p>
+																{group
+																	.filter((o) => o.id !== p.id)
+																	.map((o) => (
+																		<button
+																			key={o.id}
+																			onClick={() => mergeInto(p, o)}
+																			disabled={fixing !== null}
+																			className='block w-full truncate rounded-lg bg-white px-2.5 py-1.5 text-left text-xs font-semibold text-stone-700 uppercase ring-1 ring-amber-200 hover:ring-amber-400 disabled:opacity-50'
+																		>
+																			{fixing === p.id ? 'Merging…' : `Keep ${getPersonFullName(o)}${describe(o)}`}
+																		</button>
+																	))}
+															</div>
+														)}
+													</div>
 												))}
 												<p className='px-1 pt-1 text-[11px] text-stone-400'>
-													If two entries are the same person: move any missing
-													links to the one you keep (Manage Relationships on
-													their profile), then delete the duplicate.
+													If two entries are the same person, use Merge on the
+													one to remove: its parents, spouse and children move
+													onto the one you keep. Deleting it instead throws
+													those links away.
 												</p>
 											</div>
 										)}
