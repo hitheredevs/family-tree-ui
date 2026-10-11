@@ -216,8 +216,11 @@ export function AddPersonModal() {
 	const [lastName, setLastName] = useState('');
 	const [gender, setGender] = useState<Gender>('male');
 	const [isDeceased, setIsDeceased] = useState(false);
-	const [adoptChildren, setAdoptChildren] = useState(true);
-	const [autoLinkSpouse, setAutoLinkSpouse] = useState(true);
+	// Off by default: ticking it adds the new spouse as a parent of the
+	// relative's children, which is wrong for an ex-spouse's children.
+	const [adoptChildren, setAdoptChildren] = useState(false);
+	// Other parent when adding a child ('' = not recorded)
+	const [secondParentId, setSecondParentId] = useState('');
 	const [saving, setSaving] = useState(false);
 	const [error, setError] = useState('');
 
@@ -237,8 +240,7 @@ export function AddPersonModal() {
 
 		setError('');
 		setIsDeceased(false);
-		setAdoptChildren(true);
-		setAutoLinkSpouse(true);
+		setAdoptChildren(false);
 		setSaving(false);
 		setFirstName('');
 		setMode('create');
@@ -299,6 +301,18 @@ export function AddPersonModal() {
 		[allPeople],
 	);
 
+	// Default other parent: the relative's only current spouse, if there is
+	// exactly one. With several partners (or only an ex) the user picks.
+	useEffect(() => {
+		if (!addPersonModal.isOpen) return;
+		const rel = targRelativeId ? state.people[targRelativeId] : null;
+		const current = rel?.spouseIds ?? [];
+		setSecondParentId(
+			targRelationType === 'child' && current.length === 1 ? current[0] : '',
+		);
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [addPersonModal.isOpen, targRelativeId, targRelationType]);
+
 	/* One-tap smart link suggestions for this relative + relation */
 	const suggestions = useMemo(() => {
 		if (!addPersonModal.isOpen || !targRelativeId) return [];
@@ -349,11 +363,31 @@ export function AddPersonModal() {
 			? firstName.trim().length > 0
 			: existingPersonId.length > 0);
 
-	// If adding a child and relative has exactly one spouse, we will auto-link in background
-	const autoSecondParent =
-		targRelationType === 'child' && selectedRelative?.spouseIds?.length === 1
-			? state.people[selectedRelative.spouseIds[0]]
-			: null;
+	/* ---- other parent for a new child: current spouses first, then exes ---- */
+	const partnerOptions =
+		targRelationType === 'child' && selectedRelative
+			? [
+					...(selectedRelative.spouseIds ?? []).map((id) => ({ id, isEx: false })),
+					...(selectedRelative.exSpouseIds ?? []).map((id) => ({ id, isEx: true })),
+				].filter((o) => state.people[o.id])
+			: [];
+	const secondParent = secondParentId ? (state.people[secondParentId] ?? null) : null;
+
+	/* ---- children a new spouse can also become a parent of ---- */
+	// Skip children who already have two parents: including them made the
+	// whole save fail with "already has 2 parents".
+	const relativeChildren = (selectedRelative?.childrenIds ?? [])
+		.map((id) => state.people[id])
+		.filter((c): c is Person => Boolean(c));
+	const adoptableChildren =
+		targRelationType === 'spouse'
+			? relativeChildren.filter(
+					(c) =>
+						(c.parentIds?.length ?? 0) < 2 &&
+						!(c.parentIds ?? []).includes(existingPersonId),
+				)
+			: [];
+	const childrenWithTwoParents = relativeChildren.length - adoptableChildren.length;
 
 	const showAddAnother =
 		targRelationType === 'child' || targRelationType === 'sibling';
@@ -424,9 +458,9 @@ export function AddPersonModal() {
 					targetPersonId: targRelativeId,
 					relationshipType: 'CHILD',
 				});
-				if (autoLinkSpouse && autoSecondParent) {
+				if (secondParent) {
 					relations.push({
-						targetPersonId: autoSecondParent.id,
+						targetPersonId: secondParent.id,
 						relationshipType: 'CHILD',
 					});
 				}
@@ -441,9 +475,9 @@ export function AddPersonModal() {
 					relationshipType: 'SPOUSE',
 				});
 				if (adoptChildren) {
-					for (const childId of selectedRelative.childrenIds ?? []) {
+					for (const child of adoptableChildren) {
 						relations.push({
-							targetPersonId: childId,
+							targetPersonId: child.id,
 							relationshipType: 'PARENT',
 						});
 					}
@@ -504,9 +538,9 @@ export function AddPersonModal() {
 					targetPersonId: personId,
 					relationshipType: 'PARENT',
 				});
-				if (autoLinkSpouse && autoSecondParent) {
+				if (secondParent && secondParent.id !== personId) {
 					rows.push({
-						sourcePersonId: autoSecondParent.id,
+						sourcePersonId: secondParent.id,
 						targetPersonId: personId,
 						relationshipType: 'PARENT',
 					});
@@ -524,10 +558,10 @@ export function AddPersonModal() {
 					relationshipType: 'SPOUSE',
 				});
 				if (adoptChildren) {
-					for (const childId of selectedRelative.childrenIds ?? []) {
+					for (const child of adoptableChildren) {
 						rows.push({
 							sourcePersonId: personId,
-							targetPersonId: childId,
+							targetPersonId: child.id,
 							relationshipType: 'PARENT',
 						});
 					}
@@ -829,14 +863,16 @@ export function AddPersonModal() {
 							</>
 						)}
 
-						{/* Notice when second parent will be auto-linked */}
-						{autoSecondParent && !parentSlotsFull && (
+						{/* Other parent of a new child */}
+						{partnerOptions.length === 1 && !partnerOptions[0].isEx && !parentSlotsFull && (
 							<div className='flex items-center gap-3 rounded-xl bg-blue-50 px-4 py-3'>
 								<input
 									id='modal-auto-link-spouse'
 									type='checkbox'
-									checked={autoLinkSpouse}
-									onChange={(e) => setAutoLinkSpouse(e.target.checked)}
+									checked={secondParentId === partnerOptions[0].id}
+									onChange={(e) =>
+										setSecondParentId(e.target.checked ? partnerOptions[0].id : '')
+									}
 									className='h-5 w-5 cursor-pointer rounded border-blue-300 text-blue-600 focus:ring-2 focus:ring-blue-500'
 								/>
 								<label
@@ -845,38 +881,66 @@ export function AddPersonModal() {
 								>
 									Also link to{' '}
 									<strong className='uppercase'>
-										{autoSecondParent.firstName}
+										{state.people[partnerOptions[0].id]?.firstName}
 									</strong>{' '}
 									as the other parent
 								</label>
 							</div>
 						)}
+						{(partnerOptions.length > 1 || partnerOptions[0]?.isEx) && !parentSlotsFull && (
+							<div className='rounded-xl bg-blue-50 px-4 py-3'>
+								<label
+									htmlFor='modal-second-parent'
+									className='mb-1.5 block text-sm font-medium text-blue-800'
+								>
+									Other parent
+								</label>
+								<select
+									id='modal-second-parent'
+									value={secondParentId}
+									onChange={(e) => setSecondParentId(e.target.value)}
+									className='w-full rounded-lg border border-blue-200 bg-white px-3 py-2 text-sm text-stone-800 uppercase'
+								>
+									<option value=''>Not recorded</option>
+									{partnerOptions.map((o) => (
+										<option key={o.id} value={o.id}>
+											{getPersonFullName(state.people[o.id])}
+											{o.isEx ? ' (ex)' : ''}
+										</option>
+									))}
+								</select>
+							</div>
+						)}
 
 						{/* Toggle to adopt existing children when adding spouse */}
-						{targRelationType === 'spouse' &&
-							(selectedRelative?.childrenIds?.length ?? 0) > 0 && (
-								<div className='flex items-center gap-3 rounded-xl bg-stone-50 px-4 py-3'>
-									<input
-										id='modal-adopt-children'
-										type='checkbox'
-										checked={adoptChildren}
-										onChange={(e) => setAdoptChildren(e.target.checked)}
-										className='h-5 w-5 cursor-pointer rounded border-stone-300 text-emerald-600 focus:ring-2 focus:ring-emerald-500'
-									/>
-									<label
-										htmlFor='modal-adopt-children'
-										className='cursor-pointer text-sm font-medium text-stone-700 uppercase'
-									>
+						{targRelationType === 'spouse' && adoptableChildren.length > 0 && (
+							<div className='flex items-center gap-3 rounded-xl bg-stone-50 px-4 py-3'>
+								<input
+									id='modal-adopt-children'
+									type='checkbox'
+									checked={adoptChildren}
+									onChange={(e) => setAdoptChildren(e.target.checked)}
+									className='h-5 w-5 cursor-pointer rounded border-stone-300 text-emerald-600 focus:ring-2 focus:ring-emerald-500'
+								/>
+								<label
+									htmlFor='modal-adopt-children'
+									className='cursor-pointer text-sm font-medium text-stone-700'
+								>
+									<span className='uppercase'>
 										Also add as parent of{' '}
-										{(selectedRelative?.childrenIds ?? [])
-											.map((id) => state.people[id]?.firstName)
-											.filter(Boolean)
-											.join(', ')}
-									</label>
-								</div>
-							)}
+										{adoptableChildren.map((c) => c.firstName).join(', ')}
+									</span>
+									{childrenWithTwoParents > 0 && (
+										<span className='mt-0.5 block text-xs font-normal text-stone-500'>
+											{childrenWithTwoParents} other{' '}
+											{childrenWithTwoParents === 1 ? 'child already has' : 'children already have'}{' '}
+											two parents and won&apos;t be changed.
+										</span>
+									)}
+								</label>
+							</div>
+						)}
 
-						{/* Save & add another (children / siblings) */}
 						{showAddAnother && !parentSlotsFull && (
 							<div className='flex items-center gap-3 rounded-xl bg-stone-50 px-4 py-3'>
 								<input

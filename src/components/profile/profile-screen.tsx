@@ -610,6 +610,16 @@ export const ProfileScreen = ({
 								<div className='flex flex-col space-y-3'>
 									<p className='text-xs text-red-600 text-center font-medium'>
 										Delete {person.firstName}? This cannot be undone.
+										{(() => {
+											const links =
+												(person.parentIds?.length ?? 0) +
+												(person.childrenIds?.length ?? 0) +
+												(person.spouseIds?.length ?? 0) +
+												(person.exSpouseIds?.length ?? 0);
+											return links > 0
+												? ` Their ${links} family link${links === 1 ? '' : 's'} will be removed too. If this is a duplicate, use Merge in the Fixer tab instead.`
+												: '';
+										})()}
 									</p>
 									<div className='flex gap-2'>
 										<button

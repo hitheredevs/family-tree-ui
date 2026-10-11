@@ -41,6 +41,13 @@ const NODE_TOP = 60;
 const NODE_BOTTOM = 52;
 /** Half-width used for hit-testing and spouse-line attach points */
 const HIT_HALF_W = 55;
+/** A child further than this from its parents' junction (world units,
+ *  ~15 node widths) is drawn as a short stub unless its family is
+ *  selected, instead of a line across the whole canvas. */
+const FAR_LINK_X = 15 * 320;
+/** Length of the stub and its arrowhead size (world units) */
+const FAR_STUB = 44;
+const ARROW = 7;
 
 /** LOD thresholds */
 const LOD_FAR = 0.18;
@@ -133,7 +140,8 @@ interface BracketGeom {
     stemX: number;
     stemTopY: number;
     barY: number;
-    drops: Array<{ x: number; topY: number }>;
+    /** `far`: child sits more than FAR_LINK_X from the junction */
+    drops: Array<{ x: number; topY: number; far: boolean }>;
     /** parent + child ids — used to highlight the selected person's family */
     memberIds: Set<string>;
     bbox: BBox;
@@ -355,10 +363,23 @@ export class CanvasTreeRenderer {
     }
 
     /** Reload data from server. Keeps drawing the old data until the
-     *  fresh payload arrives, then swaps it in (no blank flash). */
-    invalidate() {
+     *  fresh payload arrives, then swaps it in (no blank flash).
+     *  With `keepInViewId`, pans (same zoom) to that person afterwards if
+     *  the recomputed layout moved them out of the middle of the screen,
+     *  so the person you were editing doesn't seem to disappear. */
+    invalidate(keepInViewId?: string | null) {
         this.loadedExtent = null;
-        this.initialLoad();
+        void this.initialLoad().then(() => {
+            if (!keepInViewId || this.destroyed) return;
+            const node = this.allNodes.find((n) => n.id === keepInViewId);
+            if (!node) return;
+            const w = this.canvas.width / this.dpr;
+            const h = this.canvas.height / this.dpr;
+            const sx = node.x * this.zoom + this.offset.x;
+            const sy = node.y * this.zoom + this.offset.y;
+            const inMiddle = sx > w * 0.2 && sx < w * 0.8 && sy > h * 0.2 && sy < h * 0.8;
+            if (!inMiddle) this.jumpToNode(keepInViewId, this.zoom);
+        });
     }
 
     /** Jump view so a specific node is centered on screen */
@@ -1099,7 +1120,11 @@ export class CanvasTreeRenderer {
 
         for (const b of rawBrackets) {
             const barY = barYMap.get(b.familyKey) ?? (b.parentBottomY + b.childTopY) / 2;
-            const drops = b.children.map((c) => ({ x: c.x, topY: c.y - NODE_TOP }));
+            const drops = b.children.map((c) => ({
+                x: c.x,
+                topY: c.y - NODE_TOP,
+                far: Math.abs(c.x - b.junctionX) > FAR_LINK_X,
+            }));
 
             let minX = b.junctionX, maxX = b.junctionX;
             for (const d of drops) {
@@ -1243,13 +1268,15 @@ export class CanvasTreeRenderer {
 
             ctx.strokeStyle = lod === 'far' ? COLOR_FAR_EDGE : COLOR_EDGE_MUTED;
             ctx.lineWidth = lod === 'far' ? 1.2 / this.zoom : 1.25;
-            this.strokeBracket(ctx, b);
+            this.strokeBracket(ctx, b, false);
         }
 
+        /* The selected person's families are drawn in full, so a far-off
+         * parent or child can still be traced */
         for (const b of highlighted) {
             ctx.strokeStyle = b.color;
             ctx.lineWidth = lod === 'far' ? 2 / this.zoom : 2.25;
-            this.strokeBracket(ctx, b);
+            this.strokeBracket(ctx, b, true);
         }
 
         /* ---- Spouse lines ---- */
@@ -1314,23 +1341,52 @@ export class CanvasTreeRenderer {
         ctx.setLineDash([]);
     }
 
-    private strokeBracket(ctx: CanvasRenderingContext2D, b: BracketGeom) {
+    /** `full` draws every child; otherwise far children get a short
+     *  stub with an arrow pointing toward their parents. */
+    private strokeBracket(ctx: CanvasRenderingContext2D, b: BracketGeom, full: boolean) {
         ctx.lineJoin = 'round';
         ctx.lineCap = 'round';
         ctx.beginPath();
 
-        /* Vertical stem: parent junction → barY */
-        ctx.moveTo(b.stemX, b.stemTopY);
-        ctx.lineTo(b.stemX, b.barY);
+        const near = full ? b.drops : b.drops.filter((d) => !d.far);
+        if (near.length > 0) {
+            /* Vertical stem: parent junction → barY */
+            ctx.moveTo(b.stemX, b.stemTopY);
+            ctx.lineTo(b.stemX, b.barY);
 
-        /* For each child: horizontal to child X, then vertical down */
-        for (const drop of b.drops) {
-            ctx.moveTo(b.stemX, b.barY);
-            ctx.lineTo(drop.x, b.barY);
-            ctx.lineTo(drop.x, drop.topY);
+            /* For each child: horizontal to child X, then vertical down */
+            for (const drop of near) {
+                ctx.moveTo(b.stemX, b.barY);
+                ctx.lineTo(drop.x, b.barY);
+                ctx.lineTo(drop.x, drop.topY);
+            }
+        } else {
+            /* Every child is far away: a short stem pointing down */
+            const end = b.stemTopY + FAR_STUB;
+            ctx.moveTo(b.stemX, b.stemTopY);
+            ctx.lineTo(b.stemX, end);
+            this.arrowHead(ctx, b.stemX, end, 1);
+        }
+
+        if (!full) {
+            /* Far children: a short stub above the child pointing up */
+            for (const drop of b.drops) {
+                if (!drop.far) continue;
+                const start = drop.topY - FAR_STUB;
+                ctx.moveTo(drop.x, drop.topY);
+                ctx.lineTo(drop.x, start);
+                this.arrowHead(ctx, drop.x, start, -1);
+            }
         }
 
         ctx.stroke();
+    }
+
+    /** Open arrowhead with its tip at (x, y); dir 1 points down, -1 up */
+    private arrowHead(ctx: CanvasRenderingContext2D, x: number, y: number, dir: 1 | -1) {
+        ctx.moveTo(x - ARROW, y - dir * ARROW);
+        ctx.lineTo(x, y);
+        ctx.lineTo(x + ARROW, y - dir * ARROW);
     }
 
     /* ---- Node drawing ---- */

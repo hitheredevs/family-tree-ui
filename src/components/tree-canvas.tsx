@@ -244,7 +244,7 @@ export function TreeCanvas({ onPersonOpen }: { onPersonOpen?: () => void }) {
 	useEffect(() => {
 		if (treeVersion !== lastVersionRef.current) {
 			lastVersionRef.current = treeVersion;
-			rendererRef.current?.invalidate();
+			rendererRef.current?.invalidate(selectedIdRef.current);
 		}
 	}, [treeVersion]);
 

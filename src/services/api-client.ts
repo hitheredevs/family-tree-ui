@@ -296,6 +296,21 @@ export async function updatePerson(
     });
 }
 
+export interface MergeResult {
+    keptId: string;
+    movedLinks: number;
+    droppedLinks: number;
+    loginMoved: boolean;
+}
+
+/** Move all of `duplicateId`'s links onto `keepId`, then remove the duplicate. */
+export async function mergePerson(duplicateId: string, keepId: string): Promise<MergeResult> {
+    return apiFetch(`/persons/${duplicateId}/merge`, {
+        method: 'POST',
+        body: JSON.stringify({ keepId }),
+    });
+}
+
 export async function deletePerson(id: string): Promise<void> {
     await apiFetch<{ message: string }>(`/persons/${id}`, {
         method: 'DELETE',
