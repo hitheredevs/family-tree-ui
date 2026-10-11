@@ -22,33 +22,45 @@ export function buildPeopleMap(people: Person[]): Map<string, Person> {
     return new Map(people.map((person) => [person.id, person]));
 }
 
-export function getPersonDisambiguation(
-    person: Person,
-    peopleById: Map<string, Person>,
-    duplicateNames: Map<string, number>,
-): string | null {
-    const fullNameKey = getPersonFullName(person).toLowerCase();
-    if ((duplicateNames.get(fullNameKey) ?? 0) < 2) return null;
+type PeopleLookup = Map<string, Person> | Record<string, Person>;
 
-    const parents = person.parentIds
-        .map((parentId) => peopleById.get(parentId))
+const lookup = (people: PeopleLookup, id: string): Person | undefined =>
+    people instanceof Map ? people.get(id) : people[id];
+
+/**
+ * Who someone is the child of, shown under their name in every list and
+ * search so people with the same name can be told apart:
+ * "Father: X", "Mother: Y · father not added", or "No parents added".
+ */
+export function getParentLabel(
+    person: Pick<Person, 'parentIds'>,
+    people: PeopleLookup,
+): string {
+    const parents = (person.parentIds ?? [])
+        .map((parentId) => lookup(people, parentId))
         .filter((parent): parent is Person => Boolean(parent));
 
     const father = parents.find((parent) => parent.gender === 'male');
-    if (father) {
-        return `Father: ${getPersonFullName(father)}`;
-    }
+    if (father) return `Father: ${getPersonFullName(father)}`;
 
     const mother = parents.find((parent) => parent.gender === 'female');
-    if (mother) {
-        return `Mother: ${getPersonFullName(mother)}`;
-    }
+    if (mother) return `Mother: ${getPersonFullName(mother)} · father not added`;
 
-    if (parents[0]) {
-        return `Parent: ${getPersonFullName(parents[0])}`;
-    }
+    if (parents[0]) return `Parent: ${getPersonFullName(parents[0])}`;
 
-    return null;
+    return 'No parents added';
+}
+
+/**
+ * Kept for existing callers: now always returns the parent label (it used
+ * to return one only when another person had the same name).
+ */
+export function getPersonDisambiguation(
+    person: Person,
+    peopleById: Map<string, Person>,
+    _duplicateNames?: Map<string, number>,
+): string {
+    return getParentLabel(person, peopleById);
 }
 
 export function getPersonSearchText(
@@ -58,11 +70,19 @@ export function getPersonSearchText(
 ): string {
     const name = getPersonFullName(person);
     const urduName = toUrdu(name);
-    const disambiguation = getPersonDisambiguation(
-        person,
-        peopleById,
-        duplicateNames,
-    );
+    // Includes the father's name, so "musaiyab saleem" finds the right one
+    const parentLabel = getParentLabel(person, peopleById);
+    void duplicateNames;
 
-    return [name, urduName, disambiguation].filter(Boolean).join(' ').toLowerCase();
+    return [name, urduName, parentLabel].filter(Boolean).join(' ').toLowerCase();
+}
+
+/** True when every word of `query` appears somewhere in `text` (case-insensitive). */
+export function matchesAllWords(text: string, query: string): boolean {
+    const hay = text.toLowerCase();
+    return query
+        .toLowerCase()
+        .split(/\s+/)
+        .filter(Boolean)
+        .every((word) => hay.includes(word));
 }

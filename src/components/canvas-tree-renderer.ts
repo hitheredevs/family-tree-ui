@@ -26,28 +26,22 @@ import {
     type ViewportEdge,
 } from '../services/api-client';
 import { toUrdu } from '../utils/transliterate';
+import {
+    AVATAR_CY,
+    AVATAR_R,
+    NODE_W,
+    buildEdgeGeometry,
+    type BBox,
+    type BracketGeom,
+    type SpouseLineGeom,
+} from './edge-geometry';
 
 /* ------------------------------------------------------------------ */
 /*  Constants                                                          */
 /* ------------------------------------------------------------------ */
 
-const NODE_W = 120;
-/** Node metrics (close LOD) — floating avatar + labels, no card */
-const AVATAR_R = 34;
-/** Avatar center sits slightly above node.y; labels hang below */
-const AVATAR_CY = -16;
-/** Vertical extents used to attach connector lines */
-const NODE_TOP = 60;
-const NODE_BOTTOM = 52;
 /** Half-width used for hit-testing and spouse-line attach points */
 const HIT_HALF_W = 55;
-/** A child further than this from its parents' junction (world units,
- *  ~15 node widths) is drawn as a short stub unless its family is
- *  selected, instead of a line across the whole canvas. */
-const FAR_LINK_X = 15 * 320;
-/** Length of the stub and its arrowhead size (world units) */
-const FAR_STUB = 44;
-const ARROW = 7;
 
 /** LOD thresholds */
 const LOD_FAR = 0.18;
@@ -62,12 +56,6 @@ const FETCH_DEBOUNCE = 500;
 
 const LOCAL_STORAGE_KEY = 'family-tree-canvas-view';
 
-/* Softened bracket palette — one hue per family */
-const BRACKET_PALETTE = [
-    '#818cf8', '#fbbf24', '#34d399', '#a78bfa', '#f472b6',
-    '#22d3ee', '#fb923c', '#2dd4bf', '#c084fc', '#60a5fa',
-    '#a3e635', '#fb7185',
-];
 
 /* Theme */
 const COLOR_BG = '#faf9f7';
@@ -105,12 +93,6 @@ function roundRectPath(
     ctx.closePath();
 }
 
-interface BBox {
-    minX: number;
-    minY: number;
-    maxX: number;
-    maxY: number;
-}
 
 function bboxVisible(b: BBox, vp: BBox, margin: number): boolean {
     return (
@@ -125,27 +107,7 @@ function bboxVisible(b: BBox, vp: BBox, margin: number): boolean {
 /*  Cached edge geometry                                               */
 /* ------------------------------------------------------------------ */
 
-interface SpouseLineGeom {
-    points: Array<{ x: number; y: number }>;
-    isEx: boolean;
-    markX: number;
-    markY: number;
-    aId: string;
-    bId: string;
-    bbox: BBox;
-}
 
-interface BracketGeom {
-    color: string;
-    stemX: number;
-    stemTopY: number;
-    barY: number;
-    /** `far`: child sits more than FAR_LINK_X from the junction */
-    drops: Array<{ x: number; topY: number; far: boolean }>;
-    /** parent + child ids — used to highlight the selected person's family */
-    memberIds: Set<string>;
-    bbox: BBox;
-}
 
 /* ------------------------------------------------------------------ */
 /*  The Renderer                                                       */
@@ -949,207 +911,12 @@ export class CanvasTreeRenderer {
 
     private rebuildGeometry() {
         this.geometryDirty = false;
-        this.spouseLines = [];
-        this.brackets = [];
-
-        const nodeMap = new Map<string, ViewportNode>();
-        for (const n of this.allNodes) {
-            if (this.focusSet && !this.focusSet.has(n.id)) continue;
-            nodeMap.set(n.id, n);
-        }
-
-        /* ---- Spouse lines (deduped pairs) ---- */
-        const drawnSpouses = new Set<string>();
-        /* ---- Child → parents in a single pass ---- */
-        const childParents = new Map<string, string[]>();
-
-        for (const edge of this.allEdges) {
-            if (edge.type === 'SPOUSE') {
-                const a = nodeMap.get(edge.sourceId);
-                const b = nodeMap.get(edge.targetId);
-                if (!a || !b) continue;
-                const key = edge.sourceId < edge.targetId
-                    ? `${edge.sourceId}-${edge.targetId}`
-                    : `${edge.targetId}-${edge.sourceId}`;
-                if (drawnSpouses.has(key)) continue;
-                drawnSpouses.add(key);
-
-                const isEx = edge.status === 'divorced' || edge.status === 'EX';
-                const left = a.x < b.x ? a : b;
-                const right = a.x < b.x ? b : a;
-                const attach = AVATAR_R + 8;
-                const leftEdge = left.x + attach;
-                const rightEdge = right.x - attach;
-                const lineY = (a.y + b.y) / 2 + AVATAR_CY; // avatar level
-                const gap = right.x - left.x;
-
-                let points: Array<{ x: number; y: number }>;
-                let markX: number;
-                let markY: number;
-
-                if (gap <= 420) {
-                    points = [
-                        { x: leftEdge, y: lineY },
-                        { x: rightEdge, y: lineY },
-                    ];
-                    markX = (leftEdge + rightEdge) / 2;
-                    markY = lineY;
-                } else {
-                    /* Far apart — route above both nodes */
-                    const routeY = Math.min(a.y, b.y) - NODE_TOP - 22;
-                    points = [
-                        { x: leftEdge, y: lineY },
-                        { x: leftEdge + 18, y: lineY },
-                        { x: leftEdge + 18, y: routeY },
-                        { x: rightEdge - 18, y: routeY },
-                        { x: rightEdge - 18, y: lineY },
-                        { x: rightEdge, y: lineY },
-                    ];
-                    markX = (left.x + right.x) / 2;
-                    markY = routeY;
-                }
-
-                let minX = Infinity, minY2 = Infinity, maxX = -Infinity, maxY2 = -Infinity;
-                for (const p of points) {
-                    if (p.x < minX) minX = p.x;
-                    if (p.x > maxX) maxX = p.x;
-                    if (p.y < minY2) minY2 = p.y;
-                    if (p.y > maxY2) maxY2 = p.y;
-                }
-
-                this.spouseLines.push({
-                    points,
-                    isEx,
-                    markX,
-                    markY,
-                    aId: edge.sourceId,
-                    bId: edge.targetId,
-                    bbox: { minX, minY: minY2, maxX, maxY: maxY2 },
-                });
-            } else if (edge.type === 'PARENT') {
-                /* edge: sourceId=parent, targetId=child */
-                if (!nodeMap.has(edge.sourceId) || !nodeMap.has(edge.targetId)) continue;
-                const bucket = childParents.get(edge.targetId);
-                if (bucket) {
-                    if (!bucket.includes(edge.sourceId)) bucket.push(edge.sourceId);
-                } else {
-                    childParents.set(edge.targetId, [edge.sourceId]);
-                }
-            }
-        }
-
-        /* ---- Group children by parent-set → families ---- */
-        const familyMap = new Map<string, { parentIds: string[]; childIds: string[] }>();
-        for (const [childId, parentIds] of childParents) {
-            const sorted = [...parentIds].sort();
-            const key = sorted.join(',');
-            let fam = familyMap.get(key);
-            if (!fam) {
-                fam = { parentIds: sorted, childIds: [] };
-                familyMap.set(key, fam);
-            }
-            fam.childIds.push(childId);
-        }
-
-        /* ---- Pre-compute bracket geometry ---- */
-        interface RawBracket {
-            familyKey: string;
-            junctionX: number;
-            parentBottomY: number;
-            childTopY: number;
-            children: ViewportNode[];
-            color: string;
-        }
-        const rawBrackets: RawBracket[] = [];
-
-        for (const [familyKey, family] of familyMap) {
-            const parentPositions = family.parentIds
-                .map((id) => nodeMap.get(id))
-                .filter((n): n is ViewportNode => !!n);
-            if (parentPositions.length === 0) continue;
-
-            const children = family.childIds
-                .map((id) => nodeMap.get(id))
-                .filter((n): n is ViewportNode => !!n)
-                .sort((a, b) => a.x - b.x);
-            if (children.length === 0) continue;
-
-            const junctionX =
-                parentPositions.reduce((s, p) => s + p.x, 0) / parentPositions.length;
-            const parentBottomY = Math.max(...parentPositions.map((p) => p.y)) + NODE_BOTTOM;
-            const childTopY = Math.min(...children.map((c) => c.y)) - NODE_TOP;
-
-            /* Stable color: hash the family key */
-            let h = 0;
-            for (let i = 0; i < familyKey.length; i++) h = ((h << 5) - h + familyKey.charCodeAt(i)) | 0;
-            const color = BRACKET_PALETTE[((h % BRACKET_PALETTE.length) + BRACKET_PALETTE.length) % BRACKET_PALETTE.length];
-
-            rawBrackets.push({ familyKey, junctionX, parentBottomY, childTopY, children, color });
-        }
-
-        /* ---- Stagger: distinct horizontal-bar Y per family within a band ---- */
-        const STAGGER_STEP = 22;
-        const bandKey = (b: RawBracket) =>
-            `${Math.round(b.parentBottomY)}:${Math.round(b.childTopY)}`;
-        const bandGroups = new Map<string, RawBracket[]>();
-        for (const b of rawBrackets) {
-            const k = bandKey(b);
-            const group = bandGroups.get(k);
-            if (group) group.push(b);
-            else bandGroups.set(k, [b]);
-        }
-
-        const barYMap = new Map<string, number>();
-        for (const group of bandGroups.values()) {
-            if (group.length === 0) continue;
-            group.sort((a, b) => a.junctionX - b.junctionX);
-            const gapTop = group[0].parentBottomY;
-            const gapBot = group[0].childTopY;
-            const gapH = gapBot - gapTop;
-            const margin = gapH * 0.22;
-            const usable = gapH - 2 * margin;
-            const step = group.length > 1
-                ? Math.min(STAGGER_STEP, usable / (group.length - 1))
-                : 0;
-            const totalSpan = step * (group.length - 1);
-            const startY = gapTop + margin + (usable - totalSpan) / 2;
-            for (let i = 0; i < group.length; i++) {
-                barYMap.set(group[i].familyKey, startY + i * step);
-            }
-        }
-
-        for (const b of rawBrackets) {
-            const barY = barYMap.get(b.familyKey) ?? (b.parentBottomY + b.childTopY) / 2;
-            const drops = b.children.map((c) => ({
-                x: c.x,
-                topY: c.y - NODE_TOP,
-                far: Math.abs(c.x - b.junctionX) > FAR_LINK_X,
-            }));
-
-            let minX = b.junctionX, maxX = b.junctionX;
-            for (const d of drops) {
-                if (d.x < minX) minX = d.x;
-                if (d.x > maxX) maxX = d.x;
-            }
-
-            const memberIds = new Set<string>(b.familyKey.split(','));
-            for (const c of b.children) memberIds.add(c.id);
-
-            this.brackets.push({
-                color: b.color,
-                stemX: b.junctionX,
-                stemTopY: b.parentBottomY,
-                barY,
-                drops,
-                memberIds,
-                bbox: {
-                    minX,
-                    maxX,
-                    minY: b.parentBottomY,
-                    maxY: Math.max(...drops.map((d) => d.topY), barY),
-                },
-            });
-        }
+        const nodes = this.focusSet
+            ? this.allNodes.filter((n) => this.focusSet!.has(n.id))
+            : this.allNodes;
+        const geometry = buildEdgeGeometry(nodes, this.allEdges);
+        this.spouseLines = geometry.spouseLines;
+        this.brackets = geometry.brackets;
     }
 
     /* ------------------------------------------------------------------ */
@@ -1268,15 +1035,13 @@ export class CanvasTreeRenderer {
 
             ctx.strokeStyle = lod === 'far' ? COLOR_FAR_EDGE : COLOR_EDGE_MUTED;
             ctx.lineWidth = lod === 'far' ? 1.2 / this.zoom : 1.25;
-            this.strokeBracket(ctx, b, false);
+            this.strokeBracket(ctx, b);
         }
 
-        /* The selected person's families are drawn in full, so a far-off
-         * parent or child can still be traced */
         for (const b of highlighted) {
             ctx.strokeStyle = b.color;
             ctx.lineWidth = lod === 'far' ? 2 / this.zoom : 2.25;
-            this.strokeBracket(ctx, b, true);
+            this.strokeBracket(ctx, b);
         }
 
         /* ---- Spouse lines ---- */
@@ -1341,55 +1106,25 @@ export class CanvasTreeRenderer {
         ctx.setLineDash([]);
     }
 
-    /** `full` draws every child; otherwise far children get a short
-     *  stub with an arrow pointing toward their parents. */
-    private strokeBracket(ctx: CanvasRenderingContext2D, b: BracketGeom, full: boolean) {
+    private strokeBracket(ctx: CanvasRenderingContext2D, b: BracketGeom) {
         ctx.lineJoin = 'round';
         ctx.lineCap = 'round';
         ctx.beginPath();
 
-        const near = full ? b.drops : b.drops.filter((d) => !d.far);
-        if (near.length > 0) {
-            /* Vertical stem: parent junction → barY */
-            ctx.moveTo(b.stemX, b.stemTopY);
-            ctx.lineTo(b.stemX, b.barY);
+        /* Trunk: parent junction → bar, stepping around nodes on the way */
+        ctx.moveTo(b.trunk[0].x, b.trunk[0].y);
+        for (let i = 1; i < b.trunk.length; i++) ctx.lineTo(b.trunk[i].x, b.trunk[i].y);
+        const end = b.trunk[b.trunk.length - 1];
 
-            /* For each child: horizontal to child X, then vertical down */
-            for (const drop of near) {
-                ctx.moveTo(b.stemX, b.barY);
-                ctx.lineTo(drop.x, b.barY);
-                ctx.lineTo(drop.x, drop.topY);
-            }
-        } else {
-            /* Every child is far away: a short stem pointing down */
-            const end = b.stemTopY + FAR_STUB;
-            ctx.moveTo(b.stemX, b.stemTopY);
-            ctx.lineTo(b.stemX, end);
-            this.arrowHead(ctx, b.stemX, end, 1);
-        }
-
-        if (!full) {
-            /* Far children: a short stub above the child pointing up */
-            for (const drop of b.drops) {
-                if (!drop.far) continue;
-                const start = drop.topY - FAR_STUB;
-                ctx.moveTo(drop.x, drop.topY);
-                ctx.lineTo(drop.x, start);
-                this.arrowHead(ctx, drop.x, start, -1);
-            }
+        /* For each child: along the bar to child X, then down */
+        for (const drop of b.drops) {
+            ctx.moveTo(end.x, b.barY);
+            ctx.lineTo(drop.x, b.barY);
+            ctx.lineTo(drop.x, drop.topY);
         }
 
         ctx.stroke();
     }
-
-    /** Open arrowhead with its tip at (x, y); dir 1 points down, -1 up */
-    private arrowHead(ctx: CanvasRenderingContext2D, x: number, y: number, dir: 1 | -1) {
-        ctx.moveTo(x - ARROW, y - dir * ARROW);
-        ctx.lineTo(x, y);
-        ctx.lineTo(x + ARROW, y - dir * ARROW);
-    }
-
-    /* ---- Node drawing ---- */
 
     private displayName(node: ViewportNode): { first: string; last: string } {
         if (!this.isUrdu) {

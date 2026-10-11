@@ -6,6 +6,7 @@ import {
 	getPersonDisambiguation,
 	getPersonFullName,
 	getPersonSearchText,
+	matchesAllWords,
 } from '../utils/person-labels';
 import { getAvatarUrl } from '../utils/avatar';
 import { useLanguage } from '../state/language-context';
@@ -50,8 +51,9 @@ export function PersonCombobox({
 		query === '' && !isOpen
 			? people
 			: people.filter((p) =>
-					getPersonSearchText(p, peopleById, duplicateNames).includes(
-						query.toLowerCase(),
+					matchesAllWords(
+						getPersonSearchText(p, peopleById, duplicateNames),
+						query,
 					),
 				);
 

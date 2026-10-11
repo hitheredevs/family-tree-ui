@@ -20,6 +20,7 @@ import { suggestLinks } from '../utils/link-suggestions';
 import {
 	getPersonFullName,
 	getPersonDisambiguation,
+	getParentLabel,
 	buildDuplicateNameMap,
 	buildPeopleMap,
 } from '../utils/person-labels';
@@ -694,7 +695,7 @@ export function AddPersonModal() {
 													{getPersonFullName(person)}
 												</span>
 												<span className='block truncate text-xs text-stone-500'>
-													{reason}
+													{reason} · {getParentLabel(person, state.people)}
 												</span>
 											</span>
 											<span className='flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-white'>
@@ -905,7 +906,7 @@ export function AddPersonModal() {
 									{partnerOptions.map((o) => (
 										<option key={o.id} value={o.id}>
 											{getPersonFullName(state.people[o.id])}
-											{o.isEx ? ' (ex)' : ''}
+											{o.isEx ? ' (ex)' : ''} · {getParentLabel(state.people[o.id], state.people)}
 										</option>
 									))}
 								</select>

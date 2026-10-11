@@ -17,6 +17,7 @@ import { NodeOverlay } from './node-overlay';
 import type { ViewportNode } from '../services/api-client';
 import { useLanguage } from '../state/language-context';
 import { toUrdu } from '../utils/transliterate';
+import { getParentLabel, matchesAllWords } from '../utils/person-labels';
 
 /* ------------------------------------------------------------------ */
 /*  TreeCanvas — thin React wrapper around CanvasTreeRenderer          */
@@ -267,19 +268,25 @@ export function TreeCanvas({ onPersonOpen }: { onPersonOpen?: () => void }) {
 
 	/* ---- search within loaded nodes ---- */
 
+	const parentLabelOf = (id: string) =>
+		getParentLabel(state.people[id] ?? { parentIds: [] }, state.people);
+
 	const searchResults = useMemo(() => {
 		if (!searchQuery.trim() || !rendererRef.current) return [];
-		const q = searchQuery.toLowerCase();
+		// Name and father's name both count, word by word ("musaiyab saleem")
 		return rendererRef.current
 			.getLoadedNodes()
 			.filter(
 				(n) =>
 					(!lineageSet || lineageSet.has(n.id)) &&
-					(n.firstName.toLowerCase().includes(q) ||
-						n.lastName.toLowerCase().includes(q)),
+					matchesAllWords(
+						`${n.firstName} ${n.lastName} ${parentLabelOf(n.id)}`,
+						searchQuery,
+					),
 			)
 			.slice(0, 8);
-	}, [searchQuery, lineageSet]);
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [searchQuery, lineageSet, state.people]);
 
 	function jumpToPerson(personId: string) {
 		rendererRef.current?.jumpToNode(personId, 0.9);
@@ -433,6 +440,9 @@ export function TreeCanvas({ onPersonOpen }: { onPersonOpen?: () => void }) {
 											) : (
 												`${p.firstName} ${p.lastName || ''}`.trim()
 											)}
+										</div>
+										<div className='truncate text-xs text-stone-500'>
+											{parentLabelOf(p.id)}
 										</div>
 									</div>
 								</button>

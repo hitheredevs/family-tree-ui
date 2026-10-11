@@ -11,7 +11,7 @@ import {
 import { useFamilyTree } from '../../state/family-tree-context';
 import { PersonCombobox } from '../person-combobox';
 import { getRelationship, findRelationPath } from '../../utils/relationship';
-import { getPersonFullName } from '../../utils/person-labels';
+import { getParentLabel, getPersonFullName } from '../../utils/person-labels';
 import * as api from '../../services/api-client';
 import type { Person } from '../../types';
 
@@ -230,6 +230,9 @@ export function AskScreen() {
 												{(p.firstName?.[0] ?? '?').toUpperCase()}
 											</span>
 											<span className='uppercase'>{p.firstName}</span>
+											<span className='font-normal text-emerald-600'>
+												· {getParentLabel(p, state.people)}
+											</span>
 											<button
 												onClick={() =>
 													setContextIds((prev) =>
