@@ -5,9 +5,11 @@ import { login, setToken, type LoginResponse } from '../services/api-client';
 
 interface LoginScreenProps {
 	onLogin: (data: LoginResponse) => void;
+	/** e.g. "Your session expired" */
+	notice?: string;
 }
 
-export function LoginScreen({ onLogin }: LoginScreenProps) {
+export function LoginScreen({ onLogin, notice }: LoginScreenProps) {
 	const [username, setUsername] = useState('');
 	const [password, setPassword] = useState('');
 	const [error, setError] = useState('');
@@ -57,6 +59,11 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
 						onSubmit={handleSubmit}
 						className='modal-card bg-white rounded-3xl shadow-xl shadow-stone-900/5 ring-1 ring-stone-200/60 p-8 space-y-5'
 					>
+						{notice && !error && (
+							<div className='bg-amber-50 text-amber-800 text-sm rounded-xl px-4 py-3 ring-1 ring-amber-100'>
+								{notice}
+							</div>
+						)}
 						{error && (
 							<div className='bg-red-50 text-red-600 text-sm rounded-xl px-4 py-3 ring-1 ring-red-100'>
 								{error}
