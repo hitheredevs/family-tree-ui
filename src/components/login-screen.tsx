@@ -36,7 +36,8 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
 
 	return (
 		<>
-			<div className='min-h-screen bg-gradient-to-br from-stone-50 via-emerald-50/40 to-teal-50/60 flex items-center justify-center p-4'>
+			<div className='h-dvh overflow-y-auto overscroll-contain bg-gradient-to-br from-stone-50 via-emerald-50/40 to-teal-50/60'>
+				<div className='flex min-h-full items-center justify-center p-4'>
 				<div className='w-full max-w-sm'>
 					{/* Logo / title */}
 					<div className='text-center mb-8'>
@@ -105,6 +106,7 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
 							Forgot password?
 						</button>
 					</form>
+				</div>
 				</div>
 			</div>
 			{showForgotPassword && (

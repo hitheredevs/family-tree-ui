@@ -54,7 +54,8 @@ export function ChangePasswordScreen({
 
 	if (forced) {
 		return (
-			<div className='min-h-screen bg-linear-to-br from-emerald-50 to-green-50 flex items-center justify-center p-4'>
+			<div className='h-dvh overflow-y-auto overscroll-contain bg-linear-to-br from-emerald-50 to-green-50'>
+				<div className='flex min-h-full items-center justify-center p-4'>
 				<div className='w-full max-w-sm space-y-5'>
 					<div className='rounded-2xl bg-white p-6 shadow-xl'>
 						<div className='mb-6 text-center'>
@@ -151,12 +152,14 @@ export function ChangePasswordScreen({
 						</button>
 					)}
 				</div>
+				</div>
 			</div>
 		);
 	}
 
 	return (
-		<div className='min-h-screen bg-linear-to-br from-emerald-50 to-green-50 flex items-center justify-center p-4'>
+		<div className='h-dvh overflow-y-auto overscroll-contain bg-linear-to-br from-emerald-50 to-green-50'>
+			<div className='flex min-h-full items-center justify-center p-4'>
 			<div className='w-full max-w-sm'>
 				{/* Header */}
 				<div className='text-center mb-8'>
@@ -261,6 +264,7 @@ export function ChangePasswordScreen({
 						</button>
 					)}
 				</form>
+			</div>
 			</div>
 		</div>
 	);
