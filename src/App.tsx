@@ -17,9 +17,13 @@ import { EventsScreen } from './components/events/events-screen';
 import { FixerScreen } from './components/fixer/fixer-screen';
 import type { User } from './types';
 import {
+	ApiError,
 	getToken,
 	setToken,
 	getMe,
+	getTokenAgeSeconds,
+	onSessionExpired,
+	refreshSession,
 	type LoginResponse,
 	type PasswordLinkPurpose,
 } from './services/api-client';
@@ -152,7 +156,7 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
 					{activeView === 'people' && (
 						<PeopleScreen onPersonOpen={handleOpenProfile} />
 					)}
-					{activeView === 'ask' && <AskScreen />}
+					{activeView === 'ask' && <AskScreen onPersonOpen={handleOpenProfile} />}
 					{activeView === 'events' && (
 						<EventsScreen onPersonOpen={handleOpenProfile} />
 					)}
@@ -198,7 +202,10 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
 
 function App() {
 	const [user, setUser] = useState<User | null>(null);
-	const [checking, setChecking] = useState(true);
+	// Restoring a saved session (skipped for password links and when signed out)
+	const [checking, setChecking] = useState(
+		() => !new URLSearchParams(window.location.search).get('credentialToken') && Boolean(getToken()),
+	);
 	const [credentialLink, setCredentialLink] = useState(() => {
 		const params = new URLSearchParams(window.location.search);
 		return {
@@ -208,23 +215,66 @@ function App() {
 		};
 	});
 
+	const [sessionNotice, setSessionNotice] = useState('');
+	const [startupError, setStartupError] = useState('');
+	const [restoreAttempt, setRestoreAttempt] = useState(0);
+
 	// On mount: if we have a token, try to restore session
 	useEffect(() => {
-		if (credentialLink.token) {
-			setChecking(false);
-			return;
-		}
-
-		const token = getToken();
-		if (!token) {
-			setChecking(false);
-			return;
-		}
+		if (credentialLink.token || !getToken()) return;
+		let cancelled = false;
 		getMe()
-			.then((u) => setUser(u))
-			.catch(() => setToken(null))
-			.finally(() => setChecking(false));
-	}, [credentialLink.token]);
+			.then((u) => !cancelled && setUser(u))
+			.catch((err) => {
+				if (cancelled) return;
+				// Only a rejected token signs you out; a network blip should not
+				if (err instanceof ApiError && (err.status === 401 || err.status === 403 || err.status === 404)) {
+					setToken(null);
+				} else {
+					setStartupError(
+						err instanceof ApiError && err.status >= 500
+							? 'The server had a problem. Please try again in a minute.'
+							: 'Check your internet connection and try again.',
+					);
+				}
+			})
+			.finally(() => !cancelled && setChecking(false));
+		return () => {
+			cancelled = true;
+		};
+	}, [credentialLink.token, restoreAttempt]);
+
+	// The server rejected our token mid-session → back to sign-in with a note
+	useEffect(
+		() =>
+			onSessionExpired(() => {
+				setUser(null);
+				setSessionNotice('Your session expired. Please sign in again.');
+			}),
+		[],
+	);
+
+	// Keep the session fresh while the app is used (tokens last 30 days)
+	useEffect(() => {
+		if (!user) return;
+		let lastTry = 0;
+		const renew = () => {
+			const age = getTokenAgeSeconds();
+			if (age == null || age < 12 * 3600 || Date.now() - lastTry < 10 * 60_000) return;
+			lastTry = Date.now();
+			refreshSession().catch(() => {
+				/* a 401 is handled globally; anything else retries later */
+			});
+		};
+		renew();
+		const onVisible = () => document.visibilityState === 'visible' && renew();
+		document.addEventListener('visibilitychange', onVisible);
+		const timer = window.setInterval(renew, 60 * 60_000);
+		return () => {
+			document.removeEventListener('visibilitychange', onVisible);
+			window.clearInterval(timer);
+		};
+	}, [user]);
 
 	function clearCredentialLink() {
 		const url = new URL(window.location.href);
@@ -236,6 +286,7 @@ function App() {
 	}
 
 	function handleLogin(data: LoginResponse) {
+		setSessionNotice('');
 		setUser(data.user);
 	}
 
@@ -263,8 +314,29 @@ function App() {
 		);
 	}
 
+	if (!user && startupError && getToken()) {
+		return (
+			<div className='flex h-screen w-full items-center justify-center bg-stone-50 p-6'>
+				<div className='max-w-xs text-center'>
+					<p className='mb-1 text-sm font-semibold text-stone-700'>Can't reach the family tree right now</p>
+					<p className='mb-4 text-xs text-stone-500'>{startupError}</p>
+					<button
+						onClick={() => {
+							setStartupError('');
+							setChecking(true);
+							setRestoreAttempt((n) => n + 1);
+						}}
+						className='rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white shadow-md shadow-emerald-600/20 transition-colors hover:bg-emerald-700'
+					>
+						Try again
+					</button>
+				</div>
+			</div>
+		);
+	}
+
 	if (!user) {
-		return <LoginScreen onLogin={handleLogin} />;
+		return <LoginScreen onLogin={handleLogin} notice={sessionNotice} />;
 	}
 
 	if (user.mustChangePassword) {
