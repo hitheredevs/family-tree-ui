@@ -149,7 +149,8 @@ export function PasswordLinkScreen({
 	}
 
 	return (
-		<div className='min-h-screen bg-linear-to-br from-emerald-50 to-sky-50 flex items-center justify-center p-4'>
+		<div className='h-dvh overflow-y-auto overscroll-contain bg-linear-to-br from-emerald-50 to-sky-50'>
+			<div className='flex min-h-full items-center justify-center p-4'>
 			<div className='w-full max-w-md rounded-3xl bg-white p-8 shadow-2xl'>
 				<div className='mb-6 text-center'>
 					<div className='mx-auto mb-4 inline-flex h-16 w-16 items-center justify-center rounded-2xl bg-emerald-500 text-3xl text-white shadow-lg'>
@@ -285,6 +286,7 @@ export function PasswordLinkScreen({
 						</button>
 					</form>
 				)}
+			</div>
 			</div>
 		</div>
 	);
