@@ -31,6 +31,7 @@ const SUGGESTION_ICONS: Record<SuggestionIcon, React.ReactNode> = {
 	crown: <Crown size={16} />,
 	chart: <BarChart3 size={16} />,
 	tree: <TreePine size={16} />,
+	branches: <Network size={16} />,
 };
 
 const SUGGESTION_TINT: Record<SuggestionIcon, string> = {
@@ -40,6 +41,7 @@ const SUGGESTION_TINT: Record<SuggestionIcon, string> = {
 	crown: 'bg-violet-50 text-violet-600 ring-violet-100',
 	chart: 'bg-emerald-50 text-emerald-600 ring-emerald-100',
 	tree: 'bg-teal-50 text-teal-600 ring-teal-100',
+	branches: 'bg-indigo-50 text-indigo-600 ring-indigo-100',
 };
 
 export function AskScreen({ onPersonOpen }: { onPersonOpen: () => void }) {
@@ -58,7 +60,11 @@ export function AskScreen({ onPersonOpen }: { onPersonOpen: () => void }) {
 	const atBottomRef = useRef(true);
 
 	const me = state.people[centerPersonId];
-	const suggestions = useMemo(() => buildSuggestions(state.people, centerPersonId), [state.people, centerPersonId]);
+	const isAdmin = currentUser?.role === 'admin';
+	const suggestions = useMemo(
+		() => buildSuggestions(state.people, centerPersonId, isAdmin),
+		[state.people, centerPersonId, isAdmin],
+	);
 	const closeFamily = useMemo(() => closeFamilyOf(state.people, centerPersonId), [state.people, centerPersonId]);
 
 	const aiDisabled = chat.aiStatus ? !chat.aiStatus.enabled : false;

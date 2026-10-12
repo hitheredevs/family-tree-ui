@@ -1,7 +1,7 @@
 import type { Person } from '../../types';
 import { getPersonFullName } from '../../utils/person-labels';
 
-export type SuggestionIcon = 'users' | 'route' | 'cake' | 'crown' | 'chart' | 'tree';
+export type SuggestionIcon = 'users' | 'route' | 'cake' | 'crown' | 'chart' | 'tree' | 'branches';
 
 export interface Suggestion {
 	icon: SuggestionIcon;
@@ -37,9 +37,19 @@ function nearbyRelatives(people: Record<string, Person>, meId: string): Person[]
 }
 
 /** Starter questions, personalised to the signed-in person where possible. */
-export function buildSuggestions(people: Record<string, Person>, meId: string): Suggestion[] {
+export function buildSuggestions(people: Record<string, Person>, meId: string, isAdmin = false): Suggestion[] {
 	const me = people[meId];
 	const list: Suggestion[] = [];
+
+	// Counting across every branch is admin-only on the server for now
+	if (isAdmin && me?.parentIds.length) {
+		list.push({
+			icon: 'branches',
+			title: 'All my cousins, every branch',
+			hint: 'Admin · far cousins in your generation',
+			prompt: 'How many cousins do I have in my own generation across every branch of the family, as far back as the tree goes?',
+		});
+	}
 
 	if (me) {
 		const grandparents = me.parentIds.flatMap((id) => people[id]?.parentIds ?? []);
